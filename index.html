@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#15365C">
+  <title>Home Manager Payments</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script src="config.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+
+  <!-- מסך טעינה -->
+  <div id="screen-loading" class="screen center">
+    <div class="spinner" aria-hidden="true"></div>
+    <p class="muted" id="loading-text">טוען…</p>
+  </div>
+
+  <!-- מסך התחברות -->
+  <div id="screen-login" class="screen center" hidden>
+    <div class="auth-card">
+      <div class="logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M10 21v-6h4v6"/></svg>
+      </div>
+      <h1>Home Manager Payments</h1>
+      <p class="muted">ניהול תשלומים, הצמדה והוצאות של הבית החדש. הנתונים נשמרים ב-Google Drive שלך בלבד.</p>
+      <button type="button" class="btn btn-primary btn-lg" id="btn-login">התחבר עם Google</button>
+      <p class="tiny muted" id="login-hint"></p>
+    </div>
+  </div>
+
+  <!-- מסך יצירת פרויקט -->
+  <div id="screen-create" class="screen center" hidden>
+    <div class="auth-card">
+      <h1>ברוך הבא<span id="create-name"></span></h1>
+      <p class="muted">לא מצאנו פרויקט בחשבון שלך. ניצור ב-Google Drive שלך:</p>
+      <ul class="checklist">
+        <li>תיקייה בשם <b>פרויקט הבית שלי</b>, עם תיקיות משנה למסמכים</li>
+        <li>קובץ Google Sheets בשם <b>נתוני הבית</b></li>
+      </ul>
+      <p class="tiny muted">לאפליקציה תהיה גישה רק לקבצים שהיא יוצרת, ולא לשאר ה-Drive.</p>
+      <button type="button" class="btn btn-primary btn-lg" id="btn-create">צור פרויקט</button>
+      <button type="button" class="btn btn-ghost" data-action="logout">החלף חשבון</button>
+    </div>
+  </div>
+
+  <!-- מסך שגיאת הגדרה -->
+  <div id="screen-config" class="screen center" hidden>
+    <div class="auth-card">
+      <h1>חסרה הגדרה</h1>
+      <p class="muted">יש להדביק את ה-Client ID של Google בקובץ <b>config.js</b>. ראה שלב 6 במדריך ההתקנה.</p>
+    </div>
+  </div>
+
+  <!-- האפליקציה -->
+  <div id="screen-app" class="shell" hidden>
+    <aside class="sidebar" aria-label="ניווט">
+      <div class="brand">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M10 21v-6h4v6"/></svg>
+        <span>Home Manager</span>
+      </div>
+      <nav class="nav" id="nav"></nav>
+      <div class="sidebar-foot">
+        <div class="user" id="user-box"></div>
+        <button type="button" class="btn btn-ghost-dark btn-sm" data-action="logout">התנתקות</button>
+      </div>
+    </aside>
+
+    <div class="content">
+      <header class="topbar">
+        <div>
+          <h1 id="view-title">דשבורד</h1>
+          <div class="muted small" id="view-sub"></div>
+        </div>
+        <div class="topbar-actions">
+          <span class="sync" id="sync-state" title="מצב שמירה"></span>
+        </div>
+      </header>
+      <main id="view" class="view" tabindex="-1"></main>
+    </div>
+
+    <nav class="bottomnav" id="bottomnav" aria-label="ניווט"></nav>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>
