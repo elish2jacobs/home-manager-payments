@@ -447,3 +447,5 @@ html.nav-collapsed .sidebar-foot .btn{padding:6px 0}
 .sticker.ok{background:var(--ok-soft);color:var(--ok)}
 .sticker.over{background:var(--err-soft);color:var(--err)}
 .sticker.none{background:var(--bg);color:var(--muted);font-weight:500}
+.sticker.commit{background:var(--brand-soft);color:var(--brand-2)}
+.hero .stickers{margin:2px 0 8px}

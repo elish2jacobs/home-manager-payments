@@ -10,7 +10,7 @@
   var FOLDER_MIME = 'application/vnd.google-apps.folder';
   var SHEET_MIME = 'application/vnd.google-apps.spreadsheet';
   var SCHEMA_VERSION = 1;
-  var APP_VERSION = '0.9.5';
+  var APP_VERSION = '0.9.6';
 
   var ROOT_NAME = 'פרויקט הבית שלי';
   var DATA_NAME = 'נתוני הבית';
@@ -1234,11 +1234,12 @@
       }
       var alertCard = alerts.length ? '<section class="card"><h2>התראות</h2><ul class="alerts">' + alerts.join('') + '</ul></section>' : '';
       var et = expTotals();
-      var ePct = et.value > 0 ? Math.min(100, et.paid / et.value * 100) : 0;
+      var ePct = et.commit > 0 ? Math.min(100, et.paid / et.commit * 100) : 0;
       var expHero = '<section class="card hero"><div class="row between"><span class="muted">הוצאות נוספות — צפי</span><a class="btn btn-ghost btn-sm" href="#/expenses">להוצאות</a></div>' +
         '<div class="hero-num num">' + M(et.value) + '</div>' +
-        '<div class="bar" role="img" aria-label="שולם ' + Math.round(ePct) + ' אחוז"><div class="paid" style="width:' + ePct.toFixed(1) + '%"></div></div>' +
-        '<div class="muted small">' + Math.round(ePct) + '% שולם</div>' +
+        (et.commit > 0.5 ? '<div class="stickers"><span class="sticker commit">התחייבויות ' + M(et.commit) + '</span></div>' : '') +
+        '<div class="bar" role="img" aria-label="שולם ' + Math.round(ePct) + ' אחוז מההתחייבויות"><div class="paid" style="width:' + ePct.toFixed(1) + '%"></div></div>' +
+        '<div class="muted small">' + (et.commit > 0.5 ? Math.round(ePct) + '% מההתחייבויות שולמו' : 'עדיין אין התחייבויות') + '</div>' +
         '<div class="stats">' + stat('שולם', M(et.paid)) + stat('לתשלום', M(et.toPay)) +
         stat(et.over ? 'חריגה מהתקציב' : 'יתרת תקציב', et.budget ? '<span class="' + (et.over ? 'warn-text' : '') + '">' + M(Math.abs(et.left)) + '</span>' : '<a href="#/expenses">להגדרה</a>') + '</div>' +
         '<p class="hint">תקציב ' + (et.budget ? M(et.budget) : 'לא הוגדר') + ' · צפי = סכום כל הפריטים; לתשלום = התחייבויות שעוד לא שולמו. סה״כ צפוי לבית: ' + M(commitment + et.value) + ', שולם הכול: ' + M(paid + et.paid) + '.</p>' + vatNote() + '</section>';
@@ -1310,8 +1311,8 @@
     return a;
   }
   // מדבקות: לתשלום (התחייבות פחות שולם) + יתרת תקציב / חריגה
-  function expStickers(a, noPay) {
-    var out = '';
+  function expStickers(a, noPay, withCommit) {
+    var out = withCommit && a.commit > 0.5 ? '<span class="sticker commit">התחייבויות ' + M(a.commit) + '</span>' : '';
     if (!noPay && a.toPay > 0.5) out += '<span class="sticker pay">לתשלום ' + M(a.toPay) + '</span>';
     if (a.budget > 0) out += a.over ? '<span class="sticker over">חריגה ' + M(-a.left) + '</span>' : '<span class="sticker ok">יתרת תקציב ' + M(a.left) + '</span>';
     else out += '<span class="sticker none">ללא תקציב</span>';
@@ -1341,7 +1342,7 @@
         '<div class="row between small muted"><span>' + a.count + ' פריטים' + (a.paid ? ' · שולם ' + M(a.paid) : '') + '</span>' +
         expStickers(a) + '</div></a></li>';
     }).join('');
-    return '<section class="card"><div class="stats">' + stat('תקציב', M(t.budget)) + stat('צפי', M(t.value)) + stat('שולם', M(t.paid)) + stat('לתשלום', M(t.toPay)) + '</div>' + '<div class="row">' + expStickers(t, true) + vatNote() + '</div>' +
+    return '<section class="card"><div class="stats">' + stat('תקציב', M(t.budget)) + stat('צפי', M(t.value)) + stat('שולם', M(t.paid)) + stat('לתשלום', M(t.toPay)) + '</div>' + '<div class="row">' + expStickers(t, true, true) + vatNote() + '</div>' +
       '<p class="hint">צפי = סכום כל הפריטים (חוץ מבוטלים). לתשלום = פריטים בהתחייבות שעוד לא שולמו. יתרת תקציב = תקציב פחות צפי.</p>' +
       '<div class="row"><button type="button" class="btn btn-secondary" data-action="new-exp">הוצאה חדשה</button>' +
       '<button type="button" class="btn btn-primary" data-action="new-pay" data-type="expense">רישום תשלום</button>' +
@@ -1376,7 +1377,7 @@
     }).join('') || '<li class="muted small">עדיין לא נרשמו תשלומים.</li>';
     return '<a class="back" href="#/expenses">' + icon('right', 18) + 'הוצאות נוספות</a>' +
       '<section class="card"><div class="stats">' + stat('תקציב', a.budget ? M(a.budget) : '<a href="#" data-action="edit-cat" data-id="' + esc(c.id) + '">להגדרה</a>') +
-      stat('צפי', M(a.value)) + stat('שולם', M(a.paid)) + stat('לתשלום', M(a.toPay)) + '</div>' + '<div class="row">' + expStickers(a, true) + vatNote() + '</div>' +
+      stat('צפי', M(a.value)) + stat('שולם', M(a.paid)) + stat('לתשלום', M(a.toPay)) + '</div>' + '<div class="row">' + expStickers(a, true, true) + vatNote() + '</div>' +
       '<div class="row"><button type="button" class="btn btn-secondary" data-action="new-exp" data-cat="' + esc(c.id) + '">הוצאה חדשה</button>' +
       '<button type="button" class="btn btn-primary" data-action="new-pay" data-type="expense" data-exp="' + esc((expRows(c.id).filter(function (r) { return r.x.status !== 'cancelled'; })[0] || { e: {} }).e.id || '') + '">רישום תשלום</button>' +
       '<button type="button" class="btn btn-secondary" data-action="edit-cat" data-id="' + esc(c.id) + '">עריכת קטגוריה</button>' +
