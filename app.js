@@ -488,6 +488,9 @@
     chat: '<path d="M4 20l1.5-4A8 8 0 1 1 9 19.5z"/>',
     mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
     tasks: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 3 3 5-6"/>',
+    x: '<path d="M6 6l12 12M18 6 6 18"/>',
+    grid: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
+    list: '<path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>',
     menu: '<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>'
   };
   var ROUTES = [
@@ -1120,7 +1123,7 @@
       var t1 = String(s.track) === '1';
       var hero = '<section class="card hero"><div class="row between"><span class="muted">התחייבות לקבלן</span><span class="badge info">' + esc(C.TRACKS[s.track].short) + '</span></div>' +
         '<div class="hero-num num">' + M(commitment) + '</div>' +
-        '<div class="bar" role="img" aria-label="שולם ' + Math.round(paidPct) + ' אחוז"><div style="width:' + paidPct.toFixed(1) + '%"></div></div>' +
+        '<div class="bar" role="img" aria-label="שולם ' + Math.round(paidPct) + ' אחוז"><div class="paid" style="width:' + paidPct.toFixed(1) + '%"></div></div>' +
         '<div class="muted small">' + Math.round(paidPct) + '% שולם</div>' +
         '<div class="stats">' + stat('שולם בפועל', M(paid)) + stat('יתרה לתשלום', M(commitment - paid)) +
         (t1 ? stat('הצמדה בפועל', M(adj)) + stat('הצמדה נכון להיום', M(estTotal)) : stat('תוספת חוזית', M(eff - C.num(s.basePrice)))) + '</div>' +
@@ -1164,7 +1167,7 @@
       var ePct = et.value > 0 ? Math.min(100, et.paid / et.value * 100) : 0;
       var expHero = '<section class="card hero"><div class="row between"><span class="muted">התחייבות להוצאות נוספות</span><a class="btn btn-ghost btn-sm" href="#/expenses">להוצאות</a></div>' +
         '<div class="hero-num num">' + M(et.value) + '</div>' +
-        '<div class="bar" role="img" aria-label="שולם ' + Math.round(ePct) + ' אחוז"><div style="width:' + ePct.toFixed(1) + '%"></div></div>' +
+        '<div class="bar" role="img" aria-label="שולם ' + Math.round(ePct) + ' אחוז"><div class="paid" style="width:' + ePct.toFixed(1) + '%"></div></div>' +
         '<div class="muted small">' + Math.round(ePct) + '% שולם</div>' +
         '<div class="stats">' + stat('שולם בפועל', M(et.paid)) + stat('יתרה לתשלום', M(et.value - et.paid)) +
         stat(et.value > et.budget && et.budget > 0 ? 'חריגה מהתקציב' : 'יתרת תקציב', et.budget ? '<span class="' + (et.value > et.budget ? 'warn-text' : '') + '">' + M(Math.abs(et.budget - et.value)) + '</span>' : '<a href="#/expenses">להגדרה</a>') + '</div>' +
@@ -1252,7 +1255,9 @@
       var pct = a.budget > 0 ? Math.min(100, a.value / a.budget * 100) : (a.value > 0 ? 100 : 0);
       return '<li><a class="cat" href="#/category/' + encodeURIComponent(c.id) + '">' +
         '<div class="row between"><b>' + esc(c.name) + '</b><span class="num">' + M(a.value) + (a.budget ? ' <span class="muted small">מתוך ' + M(a.budget) + '</span>' : '') + '</span></div>' +
-        '<div class="bar thin"><div style="width:' + pct.toFixed(1) + '%' + (a.over ? ';background:var(--accent)' : '') + '"></div></div>' +
+        '<div class="bar-row"><span class="bar-lbl">צפי מול תקציב</span><div class="bar thin"><div style="width:' + pct.toFixed(1) + '%' + (a.over ? ';background:var(--accent)' : '') + '"></div></div></div>' +
+        '<div class="bar-row"><span class="bar-lbl">שולם מול התחייבות</span><div class="bar thin"><div class="paid" style="width:' + (a.commit > 0 ? Math.min(100, a.paid / a.commit * 100) : 0).toFixed(1) + '%"></div></div>' +
+        '<span class="small muted num">' + (a.commit > 0 ? Math.round(a.paid / a.commit * 100) + '%' : '—') + '</span></div>' +
         '<div class="row between small muted"><span>' + a.count + ' פריטים' + (a.paid ? ' · שולם ' + M(a.paid) : '') + '</span>' +
         (a.over ? '<span class="badge warn">חריגה ' + M(-a.left) + '</span>' : (a.budget ? '<span>יתרה ' + M(a.left) + '</span>' : '<span>ללא תקציב</span>')) + '</div></a></li>';
     }).join('');
@@ -1338,7 +1343,7 @@
       ff('commitment', 'סכום התחייבות (₪)', { type: 'number', step: 'any', inputmode: 'decimal', hint: 'הסכום שסוכם עם הספק.' }) +
       ff('startDate', 'תאריך הזמנה', { type: 'date' }) + ff('endDate', 'תאריך אספקה', { type: 'date' }) +
       ff('notes', 'הערות', { wide: true }) +
-      '</div>' + attachSection() + '<div class="error-box" id="m-err" hidden></div><div class="modal-actions"><button type="button" class="btn btn-ghost" data-action="modal-close">ביטול</button><button type="button" class="btn btn-primary" data-action="save-exp">שמירה</button></div>');
+      '</div>' + attachSection(false, form.data.id ? 'exp:' + form.data.id : '') + '<div class="error-box" id="m-err" hidden></div><div class="modal-actions"><button type="button" class="btn btn-ghost" data-action="modal-close">ביטול</button><button type="button" class="btn btn-secondary" data-action="save-exp" data-then="pay">שמירה + רישום תשלום</button><button type="button" class="btn btn-primary" data-action="save-exp">שמירה</button></div>');
   }
   function saveExpense(btn) {
     var d = form.data, errs = [];
@@ -1350,7 +1355,8 @@
     btn.disabled = true;
     withSync(upsertRow('Expenses', obj).then(loadExpenses), 'ההוצאה נשמרה').then(function () {
       logActivity(d.id ? 'update' : 'create', 'Expenses', obj.name);
-      return attachAfterSave('exp:' + obj.id, C.num(obj.commitment) > 0 ? 'invoice' : 'quote').then(function () { closeModal(); rerender(); });
+      var thenPay = btn.getAttribute('data-then') === 'pay';
+      return attachAfterSave('exp:' + obj.id, C.num(obj.commitment) > 0 ? 'invoice' : 'quote').then(function () { closeModal(); rerender(); if (thenPay) openPayment(null, null, 'expense', obj.id); });
     }).catch(handleError).then(function () { btn.disabled = false; });
   }
   function deleteExpense(id) {
@@ -1582,8 +1588,18 @@
       return 0;
     });
   }
-  function attachSection(media) {
-    return '<details class="attach-box"' + (docUpload && docUpload.files.length || media ? ' open' : '') + '><summary>' + icon('clip', 16) + (media ? ' תמונות, וידאו ומסמכים' : ' צירוף מסמכים (אופציונלי)') + '</summary>' +
+  // קבצים שכבר מצורפים לרשומה (בחלון עריכה) — עם פתיחה ומחיקה
+  function attachedList(key) {
+    if (!key) return '';
+    var docs = docsFor(key);
+    return '<div class="attached" id="attached" data-key="' + esc(key) + '">' + (docs.length ? '<div class="small muted">קבצים מצורפים</div><ul class="chips">' + docs.map(function (d) {
+      var href = d.webViewLink || ('https://drive.google.com/file/d/' + encodeURIComponent(d.driveFileId) + '/view');
+      return '<li class="chip-x"><a href="' + esc(href) + '" target="_blank" rel="noopener">' + icon(docIcon(d), 16) + '<span>' + esc(d.name) + '</span></a>' +
+        '<button type="button" class="x" data-action="del-doc" data-id="' + esc(d.id) + '" aria-label="מחיקת ' + esc(d.name) + '">' + icon('x', 14) + '</button></li>';
+    }).join('') + '</ul>' : '') + '</div>';
+  }
+  function attachSection(media, key) {
+    return attachedList(key) + '<details class="attach-box"' + (docUpload && docUpload.files.length || media ? ' open' : '') + '><summary>' + icon('clip', 16) + (media ? ' תמונות, וידאו ומסמכים' : ' צירוף מסמכים (אופציונלי)') + '</summary>' +
       '<div class="pick-row"><label class="btn btn-secondary btn-sm file-btn">בחירת קבצים<input type="file" id="doc-files" multiple accept="image/*,' + (media ? 'video/*,' : '') + 'application/pdf,.doc,.docx,.xls,.xlsx"></label>' +
       '<label class="btn btn-secondary btn-sm file-btn">צילום<input type="file" id="doc-camera" accept="image/*" capture="environment"></label>' +
       (media ? '<label class="btn btn-secondary btn-sm file-btn">וידאו<input type="file" id="doc-video" accept="video/*" capture="environment"></label>' : '') + '</div>' +
@@ -1619,10 +1635,14 @@
   }
   function deleteDoc(id) {
     var d = state.docs.filter(function (x) { return x.id === id; })[0]; if (!d) return;
-    if (!confirm('למחוק את "' + d.name + '"?\nהקובץ יועבר לסל המחזור של Google Drive.')) return;
+    if (!confirm('למחוק את "' + d.name + '"?\nהקובץ יועבר לסל המחזור של Google Drive. הרשומה עצמה לא תימחק.')) return;
+    var inModal = $('modal').open;
     withSync(api(DRIVE + '/files/' + encodeURIComponent(d.driveFileId) + '?fields=id', { method: 'PATCH', body: { trashed: true } })
       .catch(function (e) { if (e instanceof AuthError) throw e; /* הקובץ אולי כבר נמחק ב-Drive */ })
-      .then(function () { return deleteRow('Documents', d._row); }).then(loadDocs), 'המסמך נמחק').then(rerender).catch(handleError);
+      .then(function () { return deleteRow('Documents', d._row); }).then(loadDocs), 'הקובץ נמחק').then(function () {
+        if (inModal) { var a = $('attached'); if (a) { var tmp = document.createElement('div'); tmp.innerHTML = attachedList(a.getAttribute('data-key')); a.replaceWith(tmp.firstChild); } }
+        else softRerender();
+      }).catch(handleError);
   }
   function docIcon(d) { return /^image\//.test(d.mimeType || '') ? 'image' : (/^video\//.test(d.mimeType || '') ? 'video' : 'docs'); }
   function docItems(list, showLink) {
@@ -1650,6 +1670,32 @@
       '<div class="fields"><div class="field"><label for="df-type">סוג</label><select id="df-type" data-df="type">' + opt([['', 'הכול']].concat(DOC_TYPES), docFilter.type) + '</select></div>' +
       '<div class="field"><label for="df-scope">תחום</label><select id="df-scope" data-df="scope">' + opt([['', 'הכול'], ['contractor', 'קבלן'], ['expenses', 'הוצאות נוספות'], ['journal', 'יומן תיעוד'], ['general', 'כללי']], docFilter.scope) + '</select></div></div></section>' +
       '<section class="card"><ul class="items">' + docItems(list, true) + '</ul></section>';
+  }
+
+  // ---------- תצוגות: כרטיסיות / רשימה, ומיון טבלאות ----------
+  function viewMode(key) { return storeGet('view.' + key) === 'list' ? 'list' : 'cards'; }
+  function viewToggle(key) {
+    var m = viewMode(key);
+    return '<div class="seg small-seg" role="radiogroup" aria-label="תצוגה">' +
+      '<button type="button" role="radio" aria-checked="' + (m === 'cards') + '" data-action="set-view" data-key="' + key + '" data-mode="cards" aria-label="כרטיסיות">' + icon('grid', 16) + '<span>כרטיסיות</span></button>' +
+      '<button type="button" role="radio" aria-checked="' + (m === 'list') + '" data-action="set-view" data-key="' + key + '" data-mode="list" aria-label="רשימה">' + icon('list', 16) + '<span>רשימה</span></button></div>';
+  }
+  var sortState = {};
+  var heCmp = function (a, b) { return String(a == null ? '' : a).localeCompare(String(b == null ? '' : b), 'he', { numeric: true, sensitivity: 'base' }); };
+  // cols: [{k, label, get(row), html(row), noSort}]  def: {col, dir}
+  function sortableTable(key, rows, cols, def) {
+    var st = sortState[key] || def || {};
+    var col = cols.filter(function (c) { return c.k === st.col; })[0];
+    var sorted = rows.slice();
+    if (col) sorted.sort(function (a, b) { var r = heCmp(col.get(a), col.get(b)); return st.dir === 'desc' ? -r : r; });
+    return '<div class="table-wrap"><table class="tbl data-tbl"><thead><tr>' + cols.map(function (c) {
+      if (c.noSort) return '<th>' + c.label + '</th>';
+      var on = st.col === c.k;
+      return '<th aria-sort="' + (on ? (st.dir === 'desc' ? 'descending' : 'ascending') : 'none') + '"><button type="button" class="th-btn" data-action="sort" data-key="' + key + '" data-col="' + c.k + '">' + c.label +
+        '<span class="sort-ind" aria-hidden="true">' + (on ? (st.dir === 'desc' ? '▼' : '▲') : '') + '</span></button></th>';
+    }).join('') + '</tr></thead><tbody>' + sorted.map(function (r) {
+      return '<tr>' + cols.map(function (c) { return '<td>' + (c.html ? c.html(r) : esc(c.get(r))) + '</td>'; }).join('') + '</tr>';
+    }).join('') + '</tbody></table></div>';
   }
 
   // ---------- יומן תיעוד ----------
@@ -1689,15 +1735,37 @@
         (j.notes ? '<p class="jr-notes">' + esc(j.notes) + '</p>' : '') +
         (docs.length ? '<ul class="chips">' + docs.map(function (d) {
           var href = d.webViewLink || ('https://drive.google.com/file/d/' + encodeURIComponent(d.driveFileId) + '/view');
-          return '<li><a href="' + esc(href) + '" target="_blank" rel="noopener">' + icon(/^video\//.test(d.mimeType) ? 'video' : docIcon(d), 16) + '<span>' + esc(d.name) + '</span></a></li>';
+          return '<li class="chip-x"><a href="' + esc(href) + '" target="_blank" rel="noopener">' + icon(docIcon(d), 16) + '<span>' + esc(d.name) + '</span></a>' +
+            '<button type="button" class="x" data-action="del-doc" data-id="' + esc(d.id) + '" aria-label="מחיקת ' + esc(d.name) + '">' + icon('x', 14) + '</button></li>';
         }).join('') + '</ul>' : '') + '</div></li>';
     }).join('');
     var opt = function (arr, v) { return arr.map(function (o) { return '<option value="' + esc(o[0]) + '"' + (v === o[0] ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join(''); };
-    return '<section class="card"><div class="row between"><div class="muted small">' + state.journal.length + ' רשומות</div>' +
+    var body;
+    if (viewMode('journal') === 'list' && list.length) {
+      body = '<section class="card">' + sortableTable('journal', list, [
+        { k: 'date', label: 'תאריך', get: function (j) { return j.date; }, html: function (j) { return '<span class="num nowrap">' + C.fmtDate(j.date) + '</span>'; } },
+        { k: 'title', label: 'נושא', get: function (j) { return j.title; }, html: function (j) { return '<b>' + esc(j.title) + '</b>'; } },
+        { k: 'area', label: 'תחום', get: function (j) { return j.area; } },
+        { k: 'link', label: 'שיוך', get: function (j) { return j.links ? linkLabel(j.links) : ''; } },
+        { k: 'notes', label: 'הערות', get: function (j) { return j.notes; }, html: function (j) { return '<span class="clamp">' + esc(j.notes) + '</span>'; } },
+        { k: 'files', label: 'קבצים', get: function (j) { return docsFor('jr:' + j.id).length; }, html: function (j) {
+          var docs = docsFor('jr:' + j.id);
+          return docs.length ? '<ul class="chips">' + docs.map(function (d) {
+            var href = d.webViewLink || ('https://drive.google.com/file/d/' + encodeURIComponent(d.driveFileId) + '/view');
+            return '<li class="chip-x"><a href="' + esc(href) + '" target="_blank" rel="noopener" title="' + esc(d.name) + '">' + icon(docIcon(d), 16) + '</a><button type="button" class="x" data-action="del-doc" data-id="' + esc(d.id) + '" aria-label="מחיקת ' + esc(d.name) + '">' + icon('x', 14) + '</button></li>';
+          }).join('') + '</ul>' : '<span class="muted">—</span>';
+        } },
+        { k: 'act', label: 'פעולות', noSort: true, get: function () { return ''; }, html: function (j) {
+          return '<span class="tools nowrap">' + clipBtn('jr:' + j.id) + '<button type="button" class="icon-btn" data-action="edit-jr" data-id="' + esc(j.id) + '" aria-label="עריכה">' + icon('edit', 18) + '</button>' +
+            '<button type="button" class="icon-btn danger" data-action="del-jr" data-id="' + esc(j.id) + '" aria-label="מחיקה">' + icon('trash', 18) + '</button></span>';
+        } }
+      ], { col: 'date', dir: 'desc' }) + '</section>';
+    } else body = items ? '<ul class="timeline">' + items + '</ul>' : '';
+    return '<section class="card"><div class="row between"><div class="row"><span class="muted small">' + state.journal.length + ' רשומות</span>' + viewToggle('journal') + '</div>' +
       '<button type="button" class="btn btn-primary" data-action="new-jr">רשומה חדשה</button></div>' +
       '<div class="fields"><div class="field"><label for="jf-area">תחום</label><select id="jf-area" data-jf="area">' + opt([['', 'הכול']].concat(areas.map(function (a) { return [a, a]; })), jrFilter.area) + '</select></div>' +
       '<div class="field"><label for="jf-link">שיוך</label><select id="jf-link" data-jf="link">' + opt([['', 'הכול'], ['contractor', 'קבלן'], ['expenses', 'הוצאות נוספות']], jrFilter.link) + '</select></div></div></section>' +
-      (items ? '<ul class="timeline">' + items + '</ul>' : '<section class="card"><div class="empty">' + icon('camera', 28) + '<b>היומן ריק</b><span>תעדו ביקורים באתר, התקדמות, בעיות והחלטות — עם תמונות וסרטונים.</span></div></section>');
+      (body ? body : '<section class="card"><div class="empty">' + icon('camera', 28) + '<b>היומן ריק</b><span>תעדו ביקורים באתר, התקדמות, בעיות והחלטות — עם תמונות וסרטונים.</span></div></section>');
   }
   function openJournal(id) {
     docUpload = { files: [] };
@@ -1710,7 +1778,7 @@
       ff('links', 'שיוך', { type: 'select', options: jrLinkOptions() }) +
       '<div class="field wide"><label for="m-notes">הערות</label><textarea id="m-notes" data-mf="notes" rows="4">' + esc(form.data.notes) + '</textarea></div>' +
       '</div><datalist id="jr-areas">' + areaList(state.journal.map(function (x) { return x.area; })).map(function (a) { return '<option value="' + esc(a) + '">'; }).join('') + '</datalist>' +
-      attachSection(true) +
+      attachSection(true, form.data.id ? 'jr:' + form.data.id : '') +
       '<div class="error-box" id="m-err" hidden></div><div class="modal-actions"><button type="button" class="btn btn-ghost" data-action="modal-close">ביטול</button><button type="button" class="btn btn-primary" data-action="save-jr">שמירה</button></div>');
   }
   function saveJournal(btn) {
@@ -1756,9 +1824,34 @@
     var list = state.contacts.filter(function (c) {
       return !q || [c.domain, c.company, c.role, c.name, c.phone, c.phone2, c.email, c.notes].join(' ').toLowerCase().indexOf(q) >= 0;
     });
+    var NO = 'ללא תחום';
+    var ctName = function (c) { return c.name || c.company || ''; };
     var groups = {};
-    list.forEach(function (c) { var k = c.domain || 'ללא תחום'; (groups[k] = groups[k] || []).push(c); });
-    var html = Object.keys(groups).sort().map(function (k) {
+    list.forEach(function (c) { var k = c.domain || NO; (groups[k] = groups[k] || []).push(c); });
+    var keys = Object.keys(groups).sort(function (a, b) { return a === NO ? 1 : (b === NO ? -1 : heCmp(a, b)); });
+    var ctActions = function (c) {
+      return (c.phone ? '<a class="icon-btn act" href="tel:' + esc(String(c.phone).replace(/[^\d+]/g, '')) + '" aria-label="חיוג ל' + esc(ctName(c)) + '">' + icon('phone', 18) + '</a>' +
+          '<a class="icon-btn act wa" href="https://wa.me/' + esc(waNumber(c.phone)) + '" target="_blank" rel="noopener" aria-label="וואטסאפ ל' + esc(ctName(c)) + '">' + icon('chat', 18) + '</a>' : '') +
+        (c.email ? '<a class="icon-btn act" href="mailto:' + esc(c.email) + '" aria-label="מייל ל' + esc(ctName(c)) + '">' + icon('mail', 18) + '</a>' : '') +
+        '<button type="button" class="icon-btn" data-action="edit-ct" data-id="' + esc(c.id) + '" aria-label="עריכה">' + icon('edit', 18) + '</button>' +
+        '<button type="button" class="icon-btn danger" data-action="del-ct" data-id="' + esc(c.id) + '" aria-label="מחיקה">' + icon('trash', 18) + '</button>';
+    };
+    var html;
+    if (viewMode('contacts') === 'list' && list.length) {
+      var def = list.slice().sort(function (a, b) { var r = heCmp(a.domain || 'תתת', b.domain || 'תתת'); return r || heCmp(ctName(a), ctName(b)); });
+      html = '<section class="card">' + sortableTable('contacts', def, [
+        { k: 'domain', label: 'תחום', get: function (c) { return c.domain; } },
+        { k: 'company', label: 'חברה', get: function (c) { return c.company; } },
+        { k: 'role', label: 'תפקיד', get: function (c) { return c.role; } },
+        { k: 'name', label: 'שם', get: function (c) { return c.name; }, html: function (c) { return '<b>' + esc(c.name) + '</b>'; } },
+        { k: 'phone', label: 'טלפון', get: function (c) { return c.phone; }, html: function (c) { return '<span class="num nowrap">' + esc(c.phone) + '</span>'; } },
+        { k: 'phone2', label: 'טלפון נוסף', get: function (c) { return c.phone2; }, html: function (c) { return '<span class="num nowrap">' + esc(c.phone2) + '</span>'; } },
+        { k: 'email', label: 'מייל', get: function (c) { return c.email; } },
+        { k: 'notes', label: 'הערות', get: function (c) { return c.notes; }, html: function (c) { return '<span class="clamp">' + esc(c.notes) + '</span>'; } },
+        { k: 'act', label: 'פעולות', noSort: true, get: function () { return ''; }, html: function (c) { return '<span class="ct-actions nowrap">' + ctActions(c) + '</span>'; } }
+      ]) + '</section>';
+    } else html = keys.map(function (k) {
+      groups[k].sort(function (a, b) { return heCmp(ctName(a), ctName(b)); });
       return '<section class="card"><h2>' + esc(k) + '</h2><ul class="items">' + groups[k].map(function (c) {
         var phones = [c.phone, c.phone2].filter(Boolean);
         return '<li class="item contact"><div><b>' + esc(c.name || c.company) + '</b>' +
@@ -1766,16 +1859,11 @@
           (phones.length ? '<div class="small num">' + phones.map(esc).join(' · ') + '</div>' : '') +
           (c.email ? '<div class="small">' + esc(c.email) + '</div>' : '') +
           (c.notes ? '<div class="muted small">' + esc(c.notes) + '</div>' : '') + '</div>' +
-          '<div class="ct-actions">' +
-          (c.phone ? '<a class="icon-btn act" href="tel:' + esc(String(c.phone).replace(/[^\d+]/g, '')) + '" aria-label="חיוג ל' + esc(c.name) + '">' + icon('phone', 18) + '</a>' +
-            '<a class="icon-btn act wa" href="https://wa.me/' + esc(waNumber(c.phone)) + '" target="_blank" rel="noopener" aria-label="וואטסאפ ל' + esc(c.name) + '">' + icon('chat', 18) + '</a>' : '') +
-          (c.email ? '<a class="icon-btn act" href="mailto:' + esc(c.email) + '" aria-label="מייל ל' + esc(c.name) + '">' + icon('mail', 18) + '</a>' : '') +
-          '<button type="button" class="icon-btn" data-action="edit-ct" data-id="' + esc(c.id) + '" aria-label="עריכה">' + icon('edit', 18) + '</button>' +
-          '<button type="button" class="icon-btn danger" data-action="del-ct" data-id="' + esc(c.id) + '" aria-label="מחיקה">' + icon('trash', 18) + '</button></div></li>';
+          '<div class="ct-actions">' + ctActions(c) + '</div></li>';
       }).join('') + '</ul></section>';
     }).join('');
     return '<section class="card"><div class="row between"><div class="field" style="flex:1;min-width:200px"><label for="ct-search" class="sr-only">חיפוש</label><input id="ct-search" data-ct-search="1" type="search" placeholder="חיפוש לפי שם, חברה, תחום, טלפון…" value="' + esc(ctSearch) + '"></div>' +
-      '<button type="button" class="btn btn-primary" data-action="new-ct">איש קשר חדש</button></div></section>' +
+      viewToggle('contacts') + '<button type="button" class="btn btn-primary" data-action="new-ct">איש קשר חדש</button></div></section>' +
       '<div id="ct-results">' + (html || '<section class="card"><div class="empty">' + icon('contacts', 28) + '<b>' + (q ? 'לא נמצאו תוצאות' : 'אין עדיין אנשי קשר') + '</b></div></section>') + '</div>';
   }
   function openContact(id) {
@@ -1955,8 +2043,8 @@
         ff('indexMonth', 'חודש המדד', { type: 'month' }) : '') +
       ff('contractorAmount', 'הסכום בדרישת הקבלן (לבדיקה)', { type: 'number', step: 'any', inputmode: 'decimal', hint: 'אופציונלי. אם יש הפרש מהחישוב — תוצג התראה.' }) +
       ff('notes', 'הערות', { wide: true }) +
-      '</div><div class="calc-box" id="req-calc"></div>' + attachSection() + '<div class="error-box" id="m-err" hidden></div>' +
-      '<div class="modal-actions"><button type="button" class="btn btn-ghost" data-action="modal-close">ביטול</button><button type="button" class="btn btn-primary" data-action="save-req">שמירה</button></div>';
+      '</div><div class="calc-box" id="req-calc"></div>' + attachSection(false, form.data.id ? 'req:' + form.data.id : '') + '<div class="error-box" id="m-err" hidden></div>' +
+      '<div class="modal-actions"><button type="button" class="btn btn-ghost" data-action="modal-close">ביטול</button><button type="button" class="btn btn-secondary" data-action="save-req" data-then="pay">שמירה + רישום תשלום</button><button type="button" class="btn btn-primary" data-action="save-req">שמירה</button></div>';
     openModal(title, html);
     refreshIndexHint();
     updateRequestCalc();
@@ -1993,7 +2081,17 @@
     btn.disabled = true;
     withSync(upsertRow('PaymentRequests', obj).then(loadRequests), 'הדרישה נשמרה').then(function () {
       logActivity(d.id ? 'update' : 'create', 'PaymentRequests', stageName(obj.stageId) + ' ' + obj.finalAmount);
-      return attachAfterSave('req:' + obj.id, 'request').then(function () { closeModal(); rerender(); });
+      var thenPay = btn.getAttribute('data-then') === 'pay';
+      return attachAfterSave('req:' + obj.id, 'request').then(function () {
+        closeModal(); rerender();
+        if (thenPay) {
+          openPayment(obj.stageId);
+          form.data.requestId = obj.id;
+          var paidOnReq = state.payments.filter(function (p) { return p.requestId === obj.id; }).reduce(function (a, p) { return a + C.num(p.amount); }, 0);
+          form.data.amount = String(C.round2(Math.max(0, obj.finalAmount - paidOnReq)));
+          renderPaymentForm('רישום תשלום');
+        }
+      });
     }).catch(handleError).then(function () { btn.disabled = false; });
   }
 
@@ -2035,7 +2133,7 @@
         ff('method', 'אמצעי תשלום', { type: 'select', options: METHODS }) +
         ff('fundingSource', 'מקור מימון', { list: 'funding-list', placeholder: 'הון עצמי / משכנתא…' }) +
         ff('reference', 'אסמכתא') + ff('notes', 'הערות', { wide: true }) +
-        '</div><datalist id="funding-list"><option value="הון עצמי"><option value="משכנתא"><option value="הלוואה"></datalist>' + attachSection() +
+        '</div><datalist id="funding-list"><option value="הון עצמי"><option value="משכנתא"><option value="הלוואה"></datalist>' + attachSection(false, form.data.id ? 'pay:' + form.data.id : '') +
         '<div class="error-box" id="m-err" hidden></div>' +
         '<div class="modal-actions"><button type="button" class="btn btn-ghost" data-action="modal-close">ביטול</button><button type="button" class="btn btn-primary" data-action="save-pay">שמירה</button></div>'
         : '<p class="muted">עדיין אין הוצאות. קודם צריך להוסיף הוצאה, ואז לרשום לה תשלום.</p><div class="modal-actions"><button type="button" class="btn btn-primary" data-action="new-exp">הוצאה חדשה</button></div>'));
@@ -2054,7 +2152,7 @@
       ff('fundingSource', 'מקור מימון', { list: 'funding-list', placeholder: 'הון עצמי / משכנתא…' }) +
       ff('reference', 'אסמכתא') +
       ff('notes', 'הערות', { wide: true }) +
-      '</div><datalist id="funding-list"><option value="הון עצמי"><option value="משכנתא"><option value="הלוואה"></datalist>' + attachSection() +
+      '</div><datalist id="funding-list"><option value="הון עצמי"><option value="משכנתא"><option value="הלוואה"></datalist>' + attachSection(false, form.data.id ? 'pay:' + form.data.id : '') +
       '<div class="error-box" id="m-err" hidden></div>' +
       '<div class="modal-actions"><button type="button" class="btn btn-ghost" data-action="modal-close">ביטול</button><button type="button" class="btn btn-primary" data-action="save-pay">שמירה</button></div>';
     openModal(title, html);
@@ -2258,6 +2356,13 @@
       case 'del-tk': deleteTask(btn.getAttribute('data-id')); return;
       case 'toggle-tk': toggleTask(btn.getAttribute('data-id')); return;
       case 'tk-show-done': tkShowDone = !tkShowDone; softRerender(); return;
+      case 'set-view': storeSet('view.' + btn.getAttribute('data-key'), btn.getAttribute('data-mode')); softRerender(); return;
+      case 'sort': {
+        var sk = btn.getAttribute('data-key'), sc = btn.getAttribute('data-col'), cur = sortState[sk] || {};
+        sortState[sk] = { col: sc, dir: cur.col === sc && cur.dir === 'asc' ? 'desc' : 'asc' };
+        if (sk === 'contacts') { var tmp2 = document.createElement('div'); tmp2.innerHTML = contactsView(); var r2 = $('ct-results'), n2 = tmp2.querySelector('#ct-results'); if (r2 && n2) r2.innerHTML = n2.innerHTML; } else softRerender();
+        return;
+      }
       case 'pick-sc':
         withSync(saveSettings({ scenarioId: btn.getAttribute('data-id') }), 'התרחיש נבחר').then(softRerender).catch(handleError); return;
       case 'sc-add': scDraft.push({ id: uid(), name: 'תרחיש חדש', y1: 3, y2: 3, y3: 3 }); scEditOpen = true; softRerender(); return;
