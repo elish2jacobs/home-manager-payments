@@ -974,7 +974,7 @@
           '<div class="muted small">' + C.fmtPct(r.pct) + ' · ' + (r.date ? C.fmtDate(r.date) : 'חודש ' + r.month) + '</div>' +
           '<div class="badges">' + statusBadge(r.st) + indexBadge(r) + '</div></div></div>' +
           '<div class="stage-side"><b class="num">' + M(r.base) + '</b>' +
-          (r.st.adj ? '<span class="muted small">הצמדה ' + M(r.st.adj) + '</span>' : '') +
+          (r.st.adj ? '<span class="muted small">הצמדה בפועל ' + M(r.st.adj) + '</span>' : '') +
           (r.est ? '<span class="muted small">הצמדה נכון להיום ' + M(r.est) + '</span>' : '') +
           (r.st.paid > 0 && r.st.forecast - r.st.paid > 0.5 ? '<span class="muted small">יתרה ' + M(r.st.forecast - r.st.paid) + '</span>' : '') +
           '</div></a></li>';
@@ -1016,8 +1016,8 @@
         (t1 && row.linkedBase ? stat('הצמדה', M(st.adj) + (row.est ? '<span class="muted small"> + ' + M(row.est) + ' נכון להיום</span>' : '')) : '') +
         stat('סכום צפוי', M(st.forecast)) + stat('שולם', M(st.paid)) + stat('יתרה', M(Math.max(0, st.forecast - st.paid))) + '</div>' +
         (row.est ? '<p class="hint">הצמדה נכון להיום — ' + estBasisLabel() + '. תוחלף בהצמדה בפועל כשתוזן דרישה עם מדד.</p>' : '') + vatNote() +
-        '<div class="row"><button type="button" class="btn btn-primary" data-action="new-req" data-stage="' + esc(row.stageId) + '">דרישת תשלום</button>' +
-        '<button type="button" class="btn btn-secondary" data-action="new-pay" data-stage="' + esc(row.stageId) + '">רישום תשלום</button></div></section>' +
+        '<div class="row"><button type="button" class="btn btn-secondary" data-action="new-req" data-stage="' + esc(row.stageId) + '">דרישת תשלום</button>' +
+        '<button type="button" class="btn btn-primary" data-action="new-pay" data-stage="' + esc(row.stageId) + '">רישום תשלום</button></div></section>' +
         '<section class="card"><h2>דרישות תשלום</h2><ul class="items">' + reqList + '</ul></section>' +
         '<section class="card"><h2>תשלומים</h2><ul class="items">' + payList + '</ul></section>';
     },
@@ -1026,8 +1026,10 @@
       if (!isSetup()) return needSetupCard();
       var cf = calcForm;
       var calc = '<section class="card"><h2>מחשבון הצמדה</h2><p class="hint">חישוב עצמאי — לא משנה נתונים במערכת. מדד היעד ממולא מהלמ״ס ומומר לבסיס החוזה; אפשר גם להזין ידנית.</p><div class="fields">' +
+        '<div class="field wide"><label for="cf-stage">אבן דרך (אופציונלי)</label><select id="cf-stage" data-cf="stage"><option value="">ללא — סכום חופשי</option>' +
+        ledger().map(function (r, i) { return '<option value="' + esc(r.stageId) + '"' + (cf.stage === r.stageId ? ' selected' : '') + '>' + (i + 1) + '. ' + esc(r.name) + ' · ' + C.fmtMoney(r.base) + '</option>'; }).join('') + '</select></div>' +
         cfield('amount', 'סכום (₪)', 'number') + cfield('baseIdx', 'מדד בסיס', 'number') +
-        cfield('targetMonth', 'חודש מדד יעד', 'month') + cfield('targetIdx', 'מדד יעד', 'number') +
+        cfield('targetDate', 'תאריך קובע', 'date') + cfield('targetMonth', 'חודש מדד יעד', 'month') + cfield('targetIdx', 'מדד יעד', 'number') +
         cfield('linked', 'חלק צמוד (%)', 'number') +
         '<div class="field"><label for="cf-floor">ירידת מדד</label><select id="cf-floor" data-cf="floor"><option value="true"' + (cf.floor ? ' selected' : '') + '>לא מתחת לבסיס</option><option value="false"' + (!cf.floor ? ' selected' : '') + '>מחושב גם בירידה</option></select></div>' +
         '</div><div class="calc-box" id="calc-out"></div></section>';
@@ -1065,8 +1067,8 @@
           '<div class="item-side"><b class="num">' + M(C.num(p.amount)) + '</b></div></a></li>';
       }).join('') : '<li class="muted small">עדיין לא נרשמו תשלומים.</li>';
       return '<section class="card"><div class="stats">' + stat('שולם לקבלן', M(total)) + stat('שולם להוצאות', M(etotal)) + stat('סה״כ שולם', M(total + etotal)) + stat('דרישות פתוחות', open.length) + '</div>' + vatNote() +
-        '<div class="row"><button type="button" class="btn btn-primary" data-action="new-pay">רישום תשלום</button>' +
-        '<button type="button" class="btn btn-secondary" data-action="new-req">דרישת תשלום</button></div></section>' +
+        '<div class="row"><button type="button" class="btn btn-secondary" data-action="new-req">דרישת תשלום</button>' +
+        '<button type="button" class="btn btn-primary" data-action="new-pay">רישום תשלום</button></div></section>' +
         '<section class="card"><h2>דרישות פתוחות</h2><ul class="items">' + openList + '</ul></section>' +
         '<section class="card"><h2>תשלומים לקבלן</h2><ul class="items">' + list + '</ul></section>' +
         '<section class="card"><h2>תשלומים להוצאות נוספות</h2><ul class="items">' + elist + '</ul></section>';
@@ -1139,11 +1141,15 @@
       }
       var alertCard = alerts.length ? '<section class="card"><h2>התראות</h2><ul class="alerts">' + alerts.join('') + '</ul></section>' : '';
       var et = expTotals();
-      var budgetCard = '<section class="card"><div class="row between"><h2>תקציב כולל</h2><a class="btn btn-ghost btn-sm" href="#/expenses">להוצאות</a></div>' +
-        '<div class="stats">' + stat('קבלן', M(commitment)) + stat('הוצאות נוספות', M(et.value)) + stat('סה״כ צפוי', M(commitment + et.value)) +
-        stat('שולם הכול', M(paid + et.paid)) + '</div>' +
-        (et.budget ? '<div class="muted small">תקציב הוצאות נוספות: ' + M(et.budget) + (et.value > et.budget ? ' · <span class="warn-text">חריגה ' + M(et.value - et.budget) + '</span>' : ' · יתרה ' + M(et.budget - et.value)) + '</div>' : '') + '</section>';
-      return '<div class="grid">' + hero + nextCard + '</div>' + alertCard + '<div class="grid">' + budgetCard + donutCard(commitment) + '</div>' + '<div class="grid">' + indexCard + timeline + '</div>';
+      var ePct = et.value > 0 ? Math.min(100, et.paid / et.value * 100) : 0;
+      var expHero = '<section class="card hero"><div class="row between"><span class="muted">התחייבות להוצאות נוספות</span><a class="btn btn-ghost btn-sm" href="#/expenses">להוצאות</a></div>' +
+        '<div class="hero-num num">' + M(et.value) + '</div>' +
+        '<div class="bar" role="img" aria-label="שולם ' + Math.round(ePct) + ' אחוז"><div style="width:' + ePct.toFixed(1) + '%"></div></div>' +
+        '<div class="muted small">' + Math.round(ePct) + '% שולם</div>' +
+        '<div class="stats">' + stat('שולם בפועל', M(et.paid)) + stat('יתרה לתשלום', M(et.value - et.paid)) +
+        stat(et.value > et.budget && et.budget > 0 ? 'חריגה מהתקציב' : 'יתרת תקציב', et.budget ? '<span class="' + (et.value > et.budget ? 'warn-text' : '') + '">' + M(Math.abs(et.budget - et.value)) + '</span>' : '<a href="#/expenses">להגדרה</a>') + '</div>' +
+        '<p class="hint">תקציב ' + (et.budget ? M(et.budget) : 'לא הוגדר') + ' · "התחייבות" = סכום ההתחייבות, ואם אין — ההערכה. סה״כ צפוי לבית: ' + M(commitment + et.value) + ', שולם הכול: ' + M(paid + et.paid) + '.</p>' + vatNote() + '</section>';
+      return '<div class="grid">' + hero + expHero + '</div>' + '<div class="grid">' + nextCard + (alertCard || '') + '</div>' + '<div class="grid">' + donutCard(commitment) + indexCard + '</div>' + timeline;
     }
   };
 
@@ -1157,7 +1163,9 @@
   var calcForm = { amount: '', baseIdx: '', targetMonth: '', targetIdx: '', linked: '', floor: true, manual: false };
   function initCalcPage() {
     scDraft = clone(scenarioList()).map(function (x) { delete x._row; return x; });
-    calcForm = { amount: '', baseIdx: state.s.baseIndex || '', targetMonth: '', targetIdx: '', linked: state.s.linkedPct || '100', floor: state.s.indexFloor !== 'false', manual: false };
+    calcForm = { stage: '', amount: '', baseIdx: state.s.baseIndex || '', targetDate: todayIso(), targetMonth: '', targetIdx: '', linked: state.s.linkedPct || '100', floor: state.s.indexFloor !== 'false', manual: false };
+    var km0 = C.knownMonthFor(calcForm.targetDate);
+    if (km0) { calcForm.targetMonth = km0.y + '-' + ('0' + km0.m).slice(-2); fillCalcTarget(); return; }
     var lat = cbsLatest();
     if (lat) { calcForm.targetMonth = lat.y + '-' + ('0' + lat.m).slice(-2); fillCalcTarget(); }
   }
@@ -1179,7 +1187,7 @@
     var h = $('cf-hint');
     if (h) {
       var ym = C.ymKey(cf.targetMonth), raw = ym ? cbsValue(ym.y, ym.m) : null;
-      h.textContent = cf.manual ? 'הוזן ידנית' : (raw != null ? (contractFactor() ? 'לפי הלמ״ס, מומר לבסיס החוזה (' + raw + ' בלמ״ס)' : 'לפי הלמ״ס, בבסיס הנוכחי') : (ym ? 'אין נתון בלמ״ס לחודש הזה' : ''));
+      h.textContent = cf.manual ? 'הוזן ידנית' : (cf.targetDate && ym ? 'המדד הידוע ב-' + C.fmtDate(cf.targetDate) + ' הוא מדד ' + C.monthName(ym.y, ym.m) + '. ' : '') +  (raw != null ? (contractFactor() ? 'לפי הלמ״ס, מומר לבסיס החוזה (' + raw + ' בלמ״ס)' : 'לפי הלמ״ס, בבסיס הנוכחי') : (ym ? 'אין נתון בלמ״ס לחודש הזה' : ''));
     }
     if (!(A > 0) || !(bi > 0) || !(ti > 0)) { out.innerHTML = '<p class="muted small">יש להזין סכום, מדד בסיס ומדד יעד.</p>'; return; }
     var rate = ti / bi - 1;
@@ -1335,7 +1343,7 @@
   }
 
   // תרשים טבעת: התחייבויות לפי קטגוריה (כולל קבלן)
-  var hiddenSlices = {};
+  var hiddenSlices = { __c: true }; // הקבלן מוסתר כברירת מחדל
   var SERIES = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6', '#e34948'];
   function donutCard(contractorTotal) {
     var items = [{ id: '__c', name: 'קבלן', v: contractorTotal }];
@@ -1579,6 +1587,10 @@
     if (!d.date) errs.push('יש להזין תאריך תשלום');
     if (!(C.num(d.amount) > 0)) errs.push('יש להזין סכום');
     showErrors('m-err', errs); if (errs.length) return;
+    var prow = findStage(d.stageId);
+    if (!d.id && prow && prow.linkedBase > 0 && !reqsOf(d.stageId).length && C.num(d.amount) > prow.base + 1) {
+      if (confirm('התשלום (' + C.fmtMoney(C.num(d.amount)) + ') גבוה מסכום הבסיס (' + C.fmtMoney(prow.base) + '), ואין דרישת תשלום לאבן הדרך.\nכנראה שהוא כולל הצמדה.\n\nאישור = להזין קודם דרישת תשלום (כדי שההצמדה תירשם)\nביטול = לשמור את התשלום כמו שהוא')) { openRequest(d.stageId); return; }
+    }
     var obj = { id: d.id || uid(), type: 'contractor', stageId: d.stageId, requestId: d.requestId, expenseId: '', date: d.date, amount: C.round2(C.num(d.amount)),
       method: d.method, fundingSource: d.fundingSource, reference: d.reference, notes: d.notes, updatedAt: nowIso(), _row: d._row };
     btn.disabled = true;
@@ -1624,7 +1636,16 @@
     if (t.hasAttribute('data-cf')) {
       var ck = t.getAttribute('data-cf');
       calcForm[ck] = ck === 'floor' ? t.value === 'true' : t.value;
+      if (ck === 'targetDate') { var km = C.knownMonthFor(calcForm.targetDate); if (km) { calcForm.targetMonth = km.y + '-' + ('0' + km.m).slice(-2); var tm = $('cf-targetMonth'); if (tm) tm.value = calcForm.targetMonth; } ck = 'targetMonth'; }
       if (ck === 'targetMonth') { fillCalcTarget(); var ti = $('cf-targetIdx'); if (ti) ti.value = calcForm.targetIdx; }
+      if (ck === 'stage') {
+        var sr = calcForm.stage ? findStage(calcForm.stage) : null;
+        if (sr) {
+          calcForm.amount = String(sr.base); calcForm.linked = sr.base ? String(C.round2(sr.linkedBase / sr.base * 100)) : '0';
+          if (sr.date) { calcForm.targetDate = sr.date < todayIso() ? sr.date : todayIso(); var td = $('cf-targetDate'); if (td) td.value = calcForm.targetDate; var km2 = C.knownMonthFor(calcForm.targetDate); if (km2) { calcForm.targetMonth = km2.y + '-' + ('0' + km2.m).slice(-2); var tm2 = $('cf-targetMonth'); if (tm2) tm2.value = calcForm.targetMonth; fillCalcTarget(); var ti2 = $('cf-targetIdx'); if (ti2) ti2.value = calcForm.targetIdx; } }
+          ['amount', 'linked'].forEach(function (k) { var el = $('cf-' + k); if (el) el.value = calcForm[k]; });
+        }
+      }
       if (ck === 'targetIdx') calcForm.manual = true;
       updateCalcOut(); return;
     }
