@@ -6,13 +6,22 @@
   <meta name="theme-color" content="#15365C">
   <title>Home Manager Payments — ניהול תשלומי הבית החדש</title>
   <meta name="description" content="אפליקציה חינמית לניהול תשלומים לקבלן, הצמדה למדד תשומות הבנייה והוצאות נוספות של דירה חדשה. הנתונים נשמרים ב-Google Drive של המשתמש בלבד.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Home Manager Payments — ניהול תשלומי הבית החדש">
+  <meta property="og:description" content="קבלן, הצמדה למדד, הוצאות נוספות ומסמכים. חינם, והנתונים נשארים ב-Google Drive שלך.">
+  <meta property="og:image" content="https://elish2jacobs.github.io/home-manager-payments/img/og.jpg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:url" content="https://elish2jacobs.github.io/home-manager-payments/about.html">
+  <meta property="og:locale" content="he_IL">
+  <meta name="twitter:card" content="summary_large_image">
   <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=0.9.6">
+  <link rel="stylesheet" href="styles.css?v=0.9.8">
 </head>
 <body class="page">
   <header class="page-hero">
@@ -30,40 +39,61 @@
       <h2>מה אפשר לעשות</h2>
       <ul class="feat">
         <li><b>לוח תשלומים לקבלן</b><span>אבני דרך לפי החוזה, דרישות תשלום, מה שולם ומה נשאר. תומך במסלול צמוד מדד, תוספת קבועה ו-20/80.</span></li>
-        <li><b>חישוב הצמדה</b><span>מדד תשומות הבנייה למגורים מתעדכן אוטומטית מהלמ״ס, כולל פטור, אחוז צמוד ורצפת מדד בסיס.</span></li>
-        <li><b>הוצאות נוספות</b><span>קטגוריות ותקציב: מטבח, ריהוט, חשמל, משפטיות ועוד. הערכה, התחייבות ותשלום לכל פריט.</span></li>
+        <li><b>חישוב הצמדה</b><span>מדד תשומות הבנייה למגורים מתעדכן אוטומטית מהלמ״ס, כולל חלק פטור, אחוז צמוד ורצפת מדד בסיס.</span></li>
+        <li><b>סימולציית מדד</b><span>כמה יעלו אבני הדרך הבאות בכמה תרחישי אינפלציה, כדי לתכנן מראש כמה כסף להכין.</span></li>
+        <li><b>הוצאות נוספות</b><span>קטגוריות ותקציב: מטבח, ריהוט, חשמל, משפטיות ועוד. סכום וסטטוס לכל פריט, ומה עוד נשאר לשלם.</span></li>
         <li><b>מסמכים ותיעוד</b><span>חוזה, קבלות ותמונות מהאתר נשמרים בתיקייה מסודרת בדרייב, מקושרים לתשלום או לאבן הדרך.</span></li>
-        <li><b>משימות ואנשי קשר</b><span>מה צריך לעשות ועד מתי, וכל אנשי המקצוע של הפרויקט במקום אחד.</span></li>
         <li><b>דוחות וייצוא</b><span>סיכום פרויקט, לוח קבלן, תזרים צפוי וכל התשלומים — לאקסל או ל-PDF.</span></li>
       </ul>
     </section>
 
     <section class="page-sec">
-      <h2>איך זה עובד, ולמה זה פרטי</h2>
-      <ol class="how">
-        <li>נכנסים עם חשבון Google.</li>
-        <li>האפליקציה יוצרת ב-Google Drive שלך תיקייה בשם "פרויקט הבית שלי", ובה גיליון נתונים ותיקיות למסמכים.</li>
-        <li>כל מה שמזינים נשמר שם — אצלך. אין שרת, ואין לנו גישה לנתונים שלך.</li>
-      </ol>
-      <p>האפליקציה מבקשת את ההרשאה המצומצמת ביותר של Google Drive (<span dir="ltr">drive.file</span>): היא רואה רק את הקבצים שהיא עצמה יצרה או שהעלית דרכה, ולא את שאר הקבצים שלך. אפשר לבטל את ההרשאה בכל רגע.</p>
-      <p><a href="privacy.html">למדיניות הפרטיות המלאה</a></p>
+      <h2>ככה זה נראה</h2>
+      <div class="shots">
+        <figure><img src="img/dash-mobile.jpg" width="600" height="1550" loading="lazy" alt="דשבורד: התחייבות לקבלן, שולם, יתרה, והוצאות נוספות"><figcaption>דשבורד</figcaption></figure>
+        <figure><img src="img/stages-mobile.jpg" width="600" height="1550" loading="lazy" alt="לוח התשלומים לקבלן לפי אבני דרך"><figcaption>אבני דרך לקבלן</figcaption></figure>
+        <figure><img src="img/expenses-mobile.jpg" width="600" height="1550" loading="lazy" alt="הוצאות נוספות לפי קטגוריות ותקציב"><figcaption>הוצאות נוספות</figcaption></figure>
+      </div>
+      <figure class="shot-wide"><img src="img/sim-desktop.jpg" width="1400" height="875" loading="lazy" alt="סימולציית מדד: השוואת תרחישים לפי אבני דרך"><figcaption>סימולציית מדד במחשב</figcaption></figure>
     </section>
 
     <section class="page-sec">
-      <h2>התקנה בטלפון או במחשב</h2>
-      <p>אפשר להוסיף את האפליקציה למסך הבית או לשולחן העבודה, והיא תיפתח במסך מלא כמו אפליקציה רגילה. באנדרואיד ובמחשב — כפתור "התקנת האפליקציה" בתוך האפליקציה. באייפון — ב-Safari: שיתוף ← "הוסף למסך הבית".</p>
+      <h2>איך מתחילים</h2>
+      <ol class="how-steps">
+        <li><b>נכנסים עם חשבון Google.</b> במסך של Google מסמנים את התיבה של Google Drive ולוחצים "המשך".</li>
+        <li><b>האפליקציה יוצרת בדרייב שלך</b> תיקייה בשם "פרויקט הבית שלי", ובה גיליון נתונים ותיקיות למסמכים.</li>
+        <li><b>אשף קצר:</b> פרטי הפרויקט, תאריך חתימה, מחיר, מסלול החוזה, מדד בסיס ולוח התשלומים.</li>
+        <li><b>מתקינים למסך הבית</b> — ונפתחת במסך מלא, כמו אפליקציה.</li>
+      </ol>
+    </section>
+
+    <section class="page-sec">
+      <h2>איך זה עובד, ולמה זה פרטי</h2>
+      <p>כל מה שמזינים נשמר ב-Google Drive שלך. אין שרת, ואין לנו גישה לנתונים שלך. האפליקציה מבקשת את ההרשאה המצומצמת ביותר של Google Drive (<span dir="ltr">drive.file</span>): היא רואה רק את הקבצים שהיא עצמה יצרה או שהעלית דרכה, ולא את שאר הקבצים שלך. אפשר לבטל את ההרשאה בכל רגע.</p>
+      <p><a href="privacy.html">מדיניות הפרטיות</a> · <a href="terms.html">תנאי שימוש</a></p>
+    </section>
+
+    <section class="page-sec">
+      <h2>שאלות נפוצות</h2>
+      <details class="faq"><summary>זה עולה כסף?</summary><p>לא. האפליקציה חינמית, בלי פרסומות ובלי מנוי.</p></details>
+      <details class="faq"><summary>מי יכול לראות את הנתונים שלי?</summary><p>רק אתה. הנתונים נמצאים ב-Google Drive שלך. אם תשתף את התיקייה עם מישהו, הוא יוכל לראות את הקבצים בדרייב, כמו כל קובץ אחר שלך.</p></details>
+      <details class="faq"><summary>זה עובד באייפון?</summary><p>כן. פותחים את האתר ב-Safari, לוחצים על כפתור השיתוף ובוחרים "הוסף למסך הבית". באנדרואיד ובמחשב יש כפתור "התקנת האפליקציה" בתוך האפליקציה.</p></details>
+      <details class="faq"><summary>מאיפה מגיע המדד?</summary><p>מדד תשומות הבנייה למגורים נלקח מהלשכה המרכזית לסטטיסטיקה ומתעדכן אוטומטית בערב שבו הוא מתפרסם (בדרך כלל ב-15 לחודש). האפליקציה מתרגמת אותו לבסיס המדד שבחוזה שלך.</p></details>
+      <details class="faq"><summary>החוזה שלי בנוי אחרת. זה יתאים?</summary><p>יש שלושה מסלולים: אבני דרך עם הצמדה, אבני דרך עם תוספת קבועה, ותשלום מוקדם/במסירה (כמו 20/80). את לוח התשלומים, החלק הפטור והאחוז הצמוד אפשר לערוך.</p></details>
+      <details class="faq"><summary>מה קורה אם אתנתק או אחליף מכשיר?</summary><p>שום דבר לא הולך לאיבוד. נכנסים שוב עם אותו חשבון Google — מכל מכשיר — והכול שם.</p></details>
+      <details class="faq"><summary>אפשר לסמוך על החישובים?</summary><p>החישובים נעשים לפי הכללים שבחוזה ולפי הנתונים שהזנת, והם כלי עזר לתכנון. לפני כל תשלום כדאי לבדוק את הסכום מול דרישת התשלום והחוזה. <a href="terms.html">תנאי שימוש</a>.</p></details>
     </section>
 
     <section class="page-sec en" lang="en" dir="ltr">
       <h2>About</h2>
-      <p>Home Manager Payments is a free, Hebrew web app that helps home buyers in Israel manage payments to their building contractor, index linkage (CBS construction input index), additional expenses, documents and a project journal. The app has no backend server: all data is stored in a folder and a spreadsheet that the app creates in the user's own Google Drive, using the limited <code>drive.file</code> scope (access only to files created or opened with the app). See the <a href="privacy.html#en">Privacy Policy</a>.</p>
+      <p>Home Manager Payments is a free, Hebrew web app that helps home buyers in Israel manage payments to their building contractor, index linkage (CBS construction input index), additional expenses, documents and a project journal. The app has no backend server: all data is stored in a folder and a spreadsheet that the app creates in the user's own Google Drive, using the limited <code>drive.file</code> scope (access only to files created or opened with the app). See the <a href="privacy.html#en">Privacy Policy</a> and <a href="terms.html">Terms</a>.</p>
     </section>
   </main>
 
   <footer class="page-foot">
     <div class="page-wrap">
-      <a href="index.html">כניסה לאפליקציה</a> · <a href="privacy.html">מדיניות פרטיות</a>
-      <div class="small muted">Home Manager Payments · פרויקט אישי ללא מטרות רווח</div>
+      <a href="index.html">כניסה לאפליקציה</a> · <a href="privacy.html">פרטיות</a> · <a href="terms.html">תנאי שימוש</a>
+      <div class="small muted">Home Manager Payments · פרויקט אישי ללא מטרות רווח · פותח ע״י אלישמע ג׳ייקובס</div>
     </div>
   </footer>
 </body>

@@ -10,7 +10,8 @@
   var FOLDER_MIME = 'application/vnd.google-apps.folder';
   var SHEET_MIME = 'application/vnd.google-apps.spreadsheet';
   var SCHEMA_VERSION = 1;
-  var APP_VERSION = '0.9.6';
+  var APP_VERSION = '0.9.8';
+  var TERMS_VERSION = '2026-11-24'; // לשנות כשמשנים את התנאים — כולם יתבקשו לאשר שוב
 
   var ROOT_NAME = 'פרויקט הבית שלי';
   var DATA_NAME = 'נתוני הבית';
@@ -147,6 +148,7 @@
 
   // התנתקות: יציאה מהאפליקציה בלבד. ההרשאה נשארת, ולכן בכניסה הבאה אין צורך לאשר שוב.
   function logout() {
+    try { form = null; closeModal(); } catch (e) {}
     state.token = null; state.tokenExp = 0; state.user = null;
     sessSet('token', null);
     storeSet('forceSelect', '1');
@@ -410,7 +412,9 @@
   }
 
   // ---------- זרימת כניסה ----------
+  function termsOkHere() { return storeGet('terms') === TERMS_VERSION; }
   function showLogin() {
+    $('terms-box').hidden = termsOkHere();
     var email = storeGet('email');
     var force = storeGet('forceSelect');
     $('btn-login').textContent = email && !force ? 'המשך' : 'התחבר עם Google';
@@ -452,27 +456,79 @@
       renderUser();
       setSync('', 'מחובר');
       logEvent(goSetup ? 'signup' : 'login');
+      ensureTermsRecorded();
       if (goSetup || !isSetup()) { startWizard(); location.hash = '#/setup'; }
       route();
     });
   }
   function isSetup() { return state.s.setupComplete === 'true'; }
+  // אישור תנאים: נשמר פעם אחת בגיליון של המשתמש (ובגיליון המשתמשים של המנהל)
+  function ensureTermsRecorded() {
+    if (state.s.termsVersion === TERMS_VERSION) { storeSet('terms', TERMS_VERSION); return; }
+    if (termsOkHere()) { recordTerms(storeGet('termsAt') || nowIso()); return; }
+    openModal('אישור תנאים', '<p>לפני שממשיכים, צריך לאשר את המסמכים האלה פעם אחת:</p>' +
+      '<label class="terms-check"><input type="checkbox" id="terms-ok2"><span>קראתי והבנתי את <a href="privacy.html" target="_blank" rel="noopener">מדיניות הפרטיות</a> ואת <a href="terms.html" target="_blank" rel="noopener">תנאי השימוש והגבלת האחריות</a>, ואני מסכים/ה להם.</span></label>' +
+      '<div class="error-box" id="m-err" hidden></div><div class="modal-actions"><button type="button" class="btn btn-ghost" data-action="logout">יציאה</button><button type="button" class="btn btn-primary" data-action="accept-terms">אישור והמשך</button></div>');
+    form = { kind: 'terms', data: {} };
+    var x = document.querySelector('#modal .modal-head .icon-btn'); if (x) x.hidden = true;
+  }
+  function recordTerms(at) {
+    storeSet('terms', TERMS_VERSION);
+    saveSettings({ termsAccepted: 'true', termsVersion: TERMS_VERSION, termsAcceptedAt: at }).catch(function () {});
+    logEvent('terms');
+  }
   // ---------- יומן כניסות למנהל המערכת (אופציונלי: LOG_URL ב-config.js) ----------
   // נשלח רק: סוג אירוע, מייל, שם, סוג מכשיר, גרסה ומסלול. נתוני הפרויקט עצמם לא נשלחים.
   function logEvent(kind) {
     try {
       var url = CFG.LOG_URL;
-      if (!url || !/^https:\/\/script\.google(usercontent)?\.com\//.test(url) || !state.user || !state.user.email) return;
+      if (!logUrlOk() || !state.user || !state.user.email) return;
       if (kind === 'login' && sessionStorage.getItem('hmp.logged') === state.user.email) return;
       sessionStorage.setItem('hmp.logged', state.user.email);
-      var mobile = (window.matchMedia && matchMedia('(pointer:coarse)').matches) || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
       var body = JSON.stringify({
         event: kind, email: state.user.email, name: state.user.name || '',
-        device: (mobile ? 'נייד' : 'מחשב') + (isStandalone() ? ' · אפליקציה' : ''),
-        version: APP_VERSION, track: kind === 'signup' ? '' : String(state.s.track || '')
+        device: deviceLabel(),
+        version: APP_VERSION, track: kind === 'signup' ? '' : String(state.s.track || ''),
+        terms: kind === 'terms' ? TERMS_VERSION : ''
       });
-      fetch(url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: body, keepalive: true }).catch(function () {});
+      postLog(body);
     } catch (e) { /* לעולם לא חוסם את האפליקציה */ }
+  }
+  function logUrlOk() { return !!CFG.LOG_URL && /^https:\/\/script\.google(usercontent)?\.com\//.test(CFG.LOG_URL); }
+  function postLog(body) { return fetch(CFG.LOG_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: body, keepalive: true }); }
+  function deviceLabel() {
+    var mobile = (window.matchMedia && matchMedia('(pointer:coarse)').matches) || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    return (mobile ? 'נייד' : 'מחשב') + (isStandalone() ? ' · אפליקציה' : '');
+  }
+
+  // ---------- משוב ----------
+  var FB_KINDS = [['bug', 'תקלה'], ['idea', 'הצעה לשיפור'], ['other', 'אחר']];
+  function openFeedback() {
+    form = { kind: 'fb', data: { fbKind: 'idea', text: '', contactOk: 'true' } };
+    openModal('שליחת משוב', '<p class="hint">מצאת תקלה? יש רעיון לשיפור? כל משוב עוזר. ההודעה נשלחת עם המייל שלך, גרסת האפליקציה וסוג המכשיר — בלי נתוני הפרויקט.</p>' +
+      '<div class="fields">' + ff('fbKind', 'סוג', { type: 'select', options: FB_KINDS }) +
+      '<div class="field wide"><label for="m-text">מה תרצה לספר? <span class="req">*</span></label><textarea id="m-text" data-mf="text" rows="5" placeholder="לדוגמה: במסך ההוצאות, כשלוחצים על… קורה…"></textarea></div>' +
+      '<label class="sim-check wide"><input type="checkbox" id="fb-contact" checked> אפשר לחזור אליי במייל</label></div>' +
+      '<div class="error-box" id="m-err" hidden></div><div class="modal-actions"><button type="button" class="btn btn-ghost" data-action="modal-close">ביטול</button><button type="button" class="btn btn-primary" data-action="send-feedback">שליחה</button></div>');
+  }
+  function sendFeedback(btn) {
+    var d = form.data, text = String(d.text || '').trim(), contact = !!($('fb-contact') && $('fb-contact').checked);
+    if (text.length < 3) { showErrors('m-err', ['יש לכתוב כמה מילים']); return; }
+    var kind = (FB_KINDS.filter(function (k) { return k[0] === d.fbKind; })[0] || FB_KINDS[2])[1];
+    var where = (currentRoute() || {}).title || '';
+    if (logUrlOk() && state.user) {
+      btn.disabled = true;
+      postLog(JSON.stringify({ event: 'feedback', email: state.user.email, name: state.user.name || '', kind: kind, text: text.slice(0, 2000), contact: contact ? 'כן' : 'לא', device: deviceLabel(), version: APP_VERSION, page: where }))
+        .then(function () { closeModal(); toast('תודה! המשוב נשלח', 'ok'); }, function () { toast('השליחה נכשלה. בדוק את החיבור ונסה שוב.', 'err'); })
+        .then(function () { btn.disabled = false; });
+      return;
+    }
+    if (CFG.CONTACT_EMAIL) {
+      location.href = 'mailto:' + CFG.CONTACT_EMAIL + '?subject=' + encodeURIComponent('משוב: ' + kind + ' — Home Manager Payments') +
+        '&body=' + encodeURIComponent(text + '\n\n— גרסה ' + APP_VERSION + ' · ' + deviceLabel() + ' · מסך: ' + where);
+      closeModal(); return;
+    }
+    toast('שליחת משוב לא הוגדרה', 'err');
   }
 
 
@@ -518,6 +574,8 @@
     x: '<path d="M6 6l12 12M18 6 6 18"/>',
     sim: '<path d="M3 20h18"/><path d="m4 16 5-5 4 3 7-8"/><path d="M16 6h4v4"/>',
     left: '<path d="m15 18-6-6 6-6"/>',
+    info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6"/><path d="M12 7.5v.5"/>',
+    share: '<circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="m8.2 10.8 7.6-4.4M8.2 13.2l7.6 4.4"/>',
     report: '<path d="M5 3h14v18H5z"/><path d="M9 16v-3M12 16V9M15 16v-5"/>',
     download: '<path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/>',
     grid: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
@@ -535,8 +593,9 @@
     { id: 'documents', title: 'מסמכים', icon: 'docs' },
     { id: 'reports', title: 'דוחות וייצוא', icon: 'report' },
     { id: 'calculator', title: 'מחשבון מדד', icon: 'calc' },
-    { id: 'simulation', title: 'סימולציית מדד לאבני דרך', short: 'סימולציה', icon: 'sim' },
+    { id: 'simulation', title: 'סימולציית מדד לאבני דרך', navTitle: 'סימולציית מדד', short: 'סימולציה', icon: 'sim' },
     { id: 'settings', title: 'הגדרות', icon: 'settings' },
+    { id: 'info', title: 'אודות', icon: 'info', foot: true },
     { id: 'more', title: 'עוד', icon: 'menu', mobile: true, mobileOnly: true }
   ];
   var HIDDEN_ROUTES = [{ id: 'setup', title: 'הגדרת פרויקט', icon: 'settings' }, { id: 'stage', title: 'אבן דרך', icon: 'stages', nav: 'contractor' }, { id: 'category', title: 'קטגוריה', icon: 'expenses', nav: 'expenses' }];
@@ -545,8 +604,8 @@
     return '<svg viewBox="0 0 24 24" width="' + size + '" height="' + size + '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICONS[name] + '</svg>';
   }
   function buildNav() {
-    $('nav').innerHTML = ROUTES.filter(function (r) { return !r.mobileOnly; }).map(function (r) {
-      return '<a href="#/' + r.id + '" data-route="' + r.id + '" title="' + r.title + '">' + icon(r.icon) + '<span>' + r.title + '</span></a>';
+    $('nav').innerHTML = ROUTES.filter(function (r) { return !r.mobileOnly && !r.foot; }).map(function (r) {
+      return '<a href="#/' + r.id + '" data-route="' + r.id + '" title="' + r.title + '">' + icon(r.icon) + '<span>' + (r.navTitle || r.title) + '</span></a>';
     }).join('');
     applyNavCollapsed();
     $('bottomnav').innerHTML = ROUTES.filter(function (r) { return r.mobile; }).map(function (r) {
@@ -1121,6 +1180,7 @@
     expenses: function () { if (!isSetup()) return needSetupCard(); return expensesView(); },
     documents: function () { return documentsView(); },
     reports: function () { return reportsView(); },
+    info: function () { return infoView(); },
     simulation: function () { if (!isSetup()) return needSetupCard(); return simView(); },
     journal: function () { return journalView(); },
     contacts: function () { return contactsView(); },
@@ -1129,8 +1189,8 @@
     more: function () {
       var inst = '<li class="install-entry"' + (canInstall() ? '' : ' hidden') + '><a href="#" data-action="install">' + icon('download') + '<span>התקנת האפליקציה</span>' + icon('right', 16) + '</a></li>';
       return '<section class="card"><ul class="more-list">' + ROUTES.filter(function (r) { return !r.mobile; }).map(function (r) {
-        return (r.id === 'settings' ? inst : '') + '<li><a href="#/' + r.id + '">' + icon(r.icon) + '<span>' + r.title + '</span>' + icon('right', 16) + '</a></li>';
-      }).join('') + '</ul></section>' +
+        return (r.id === 'settings' ? inst : '') + '<li><a href="#/' + r.id + '">' + icon(r.icon) + '<span>' + (r.navTitle || r.title) + '</span>' + icon('right', 16) + '</a></li>';
+      }).join('') + '<li><a href="#" data-action="feedback">' + icon('chat') + '<span>שליחת משוב</span>' + icon('right', 16) + '</a></li></ul></section>' +
         '<section class="card"><div class="muted small">' + esc(state.user && state.user.email) + '</div><div class="row"><button type="button" class="btn btn-secondary btn-sm" data-action="logout">התנתקות</button></div></section>';
     },
     payments: function () {
@@ -1781,6 +1841,41 @@
     }).join('') + '</tbody></table></div>';
   }
 
+
+  // ---------- אודות ----------
+  var SITE = 'https://elish2jacobs.github.io/home-manager-payments/';
+  var DEV_NAME = 'אלישמע ג׳ייקובס';
+  function infoView() {
+    var mail = CFG.CONTACT_EMAIL || '', cb = state.cbs, lat = cbsLatest(), nx = lat ? C.nextPublication(lat) : null;
+    var link = function (href, text) { return '<a href="' + esc(href) + '" target="_blank" rel="noopener">' + esc(text) + '</a>'; };
+    return '<section class="card info-hero"><img src="icons/icon-192.png" width="64" height="64" alt="">' +
+      '<div><h2>Home Manager Payments</h2><div class="muted small">גרסה <span class="num">' + esc(APP_VERSION) + '</span></div></div>' +
+      '<p>ניהול התשלומים של הבית החדש במקום אחד: אבני דרך מול הקבלן, הצמדה למדד, הוצאות נוספות, מסמכים ותיעוד. חינם וללא פרסומות.</p>' +
+      kv('פותח ע״י', esc(DEV_NAME)) + (mail ? kv('יצירת קשר', '<a href="mailto:' + esc(mail) + '">' + esc(mail) + '</a>') : '') +
+      '<div class="row"><button type="button" class="btn btn-primary btn-sm" data-action="share-app">' + icon('share', 16) + 'שיתוף האפליקציה</button>' +
+      '<button type="button" class="btn btn-secondary btn-sm" data-action="feedback">' + icon('chat', 16) + 'שליחת משוב</button>' +
+      (canInstall() ? '<button type="button" class="btn btn-secondary btn-sm" data-action="install">' + icon('download', 16) + 'התקנת האפליקציה</button>' : '') + '</div></section>' +
+      '<section class="card"><h2>הנתונים שלך</h2><p class="hint">כל הנתונים נשמרים ב-Google Drive שלך בלבד. לאפליקציה אין שרת, ואף אחד אחר לא רואה אותם.</p>' +
+      kv('תיקייה', state.rootLink ? link(state.rootLink, ROOT_NAME) : '—') + kv('קובץ נתונים', state.sheetLink ? link(state.sheetLink, DATA_NAME) : '—') +
+      kv('חשבון', esc(state.user && state.user.email)) + '</section>' +
+      '<section class="card"><h2>מדד תשומות הבנייה</h2>' +
+      kv('מקור', 'הלשכה המרכזית לסטטיסטיקה' + (cb && cb.name ? ' · ' + esc(cb.name) : '')) +
+      kv('המדד האחרון', lat ? C.monthName(lat.y, lat.m) + ' · <span class="num">' + lat.v + '</span>' + (cb && cb.base ? ' <span class="muted small">(בסיס ' + esc(cb.base) + ')</span>' : '') : '—') +
+      kv('עודכן', cb && cb.updatedAt ? '<span class="num">' + fmtDateTime(cb.updatedAt) + '</span>' : '—') +
+      kv('המדד הבא', nx ? 'צפוי ב-' + nx.day + ' ב' + C.HE_MONTHS[nx.m - 1] + ' ' + nx.y + ', בערב' : '—') +
+      '<p class="hint">העדכון רץ אוטומטית כל ערב, ובערב הפרסום המדד החדש נקלט לבד.</p></section>' +
+      '<section class="card"><h2>קישורים</h2><ul class="more-list">' +
+      '<li><a href="' + SITE + 'promo.html" target="_blank" rel="noopener">' + icon('home') + '<span>דף האפליקציה</span>' + icon('right', 16) + '</a></li>' +
+      '<li><a href="' + SITE + 'about.html" target="_blank" rel="noopener">' + icon('info') + '<span>מדריך ושאלות נפוצות</span>' + icon('right', 16) + '</a></li>' +
+      '<li><a href="' + SITE + 'privacy.html" target="_blank" rel="noopener">' + icon('docs') + '<span>מדיניות פרטיות</span>' + icon('right', 16) + '</a></li>' +
+      '<li><a href="' + SITE + 'terms.html" target="_blank" rel="noopener">' + icon('docs') + '<span>תנאי שימוש</span>' + icon('right', 16) + '</a></li></ul>' +
+      '<p class="hint">החישובים באפליקציה הם כלי עזר לתכנון בלבד ואינם ייעוץ. לפני כל תשלום כדאי לבדוק את הסכום מול החוזה ודרישת התשלום.</p></section>';
+  }
+  function shareApp() {
+    var url = SITE + 'promo.html', data = { title: 'Home Manager Payments', text: 'אפליקציה חינמית לניהול התשלומים של הבית החדש — קבלן, הצמדה למדד והוצאות נוספות.', url: url };
+    if (navigator.share) { navigator.share(data).catch(function () {}); return; }
+    (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(function () { toast('הקישור הועתק', 'ok'); }, function () { prompt('הקישור לשיתוף:', url); });
+  }
   // ---------- סימולציה — אבני דרך ועליית מדד ----------
   // עצמאית לגמרי: לא משנה שום נתון אמיתי. ההגדרות שלה נשמרות במפתחות sim* ובגיליון Scenarios.
   var SIM_YEARS = 5;
@@ -2591,6 +2686,7 @@
   function openModal(title, html) {
     var d = $('modal');
     $('modal-title').textContent = title;
+    var mx = document.querySelector('#modal .modal-head .icon-btn'); if (mx) mx.hidden = false;
     $('modal-body').innerHTML = html;
     bindPickers();
     if (typeof d.showModal === 'function') { if (!d.open) d.showModal(); } else d.setAttribute('open', '');
@@ -2986,12 +3082,18 @@
       case 'edit-pay': openPayment(null, btn.getAttribute('data-id')); return;
       case 'del-pay': deletePayment(btn.getAttribute('data-id')); return;
       case 'save-pay': savePayment(btn); return;
-      case 'modal-close': closeModal(); return;
+      case 'modal-close': if (form && form.kind === 'terms') return; closeModal(); return;
       case 'attach': openDocUpload(btn.getAttribute('data-link')); return;
       case 'save-doc': saveDocs(btn); return;
       case 'doc-unpick': docUpload.files.splice(+btn.getAttribute('data-i'), 1); renderPicked(); return;
       case 'del-doc': deleteDoc(btn.getAttribute('data-id')); return;
       case 'install': installApp(); return;
+      case 'share-app': shareApp(); return;
+      case 'feedback': openFeedback(); return;
+      case 'accept-terms':
+        if (!$('terms-ok2').checked) { showErrors('m-err', ['יש לסמן את התיבה כדי להמשיך']); return; }
+        closeModal(); recordTerms(nowIso()); toast('תודה, האישור נשמר', 'ok'); return;
+      case 'send-feedback': sendFeedback(btn); return;
       case 'nav-toggle': try { localStorage.setItem('hmp.navCollapsed', navCollapsed() ? '0' : '1'); } catch (e) {} applyNavCollapsed(); return;
       case 'sim-toggle': {
         var hid = simOpts().hidden, sid = btn.getAttribute('data-id'), at = hid.indexOf(sid);
@@ -3143,6 +3245,7 @@
     if (!C) { document.body.innerHTML = '<p style="padding:24px">קובץ calc.js חסר.</p>'; return; }
     if (!CFG.CLIENT_ID || /PASTE_YOUR_CLIENT_ID/.test(CFG.CLIENT_ID)) { show('screen-config'); return; }
     initPwa();
+    $('modal').addEventListener('cancel', function (ev) { if (form && form.kind === 'terms') ev.preventDefault(); });
     $('btn-retry').addEventListener('click', function () { location.reload(); });
     if (navigator.onLine === false) { show('screen-offline'); window.addEventListener('online', function () { location.reload(); }, { once: true }); return; }
     buildNav();
@@ -3161,6 +3264,10 @@
       var btn = this; btn.disabled = true;
       var force = !!storeGet('forceSelect');
       $('login-err').hidden = true;
+      if (!termsOkHere()) {
+        if (!$('terms-ok').checked) { var lb = $('login-err'); lb.innerHTML = 'כדי להמשיך יש לסמן שקראת ואישרת את מדיניות הפרטיות ותנאי השימוש.'; lb.hidden = false; btn.disabled = false; return; }
+        storeSet('terms', TERMS_VERSION); storeSet('termsAt', nowIso());
+      }
       requestToken(force).then(function () { storeSet('forceSelect', null); return afterAuth(); }).catch(handleError).then(function () { btn.disabled = false; });
     });
     $('btn-create').addEventListener('click', function () {
