@@ -205,15 +205,20 @@
     { id: 'f', name: 'ו — שיא בסוף', y1: 2.0, y2: 2.5, y3: 6.5 },
     { id: 'g', name: 'ז — אחיד', y1: 3.0, y2: 3.0, y3: 3.0 }
   ];
-  // שנת פרויקט (1–3) של חודש מסוים, לפי תאריך החתימה. אחרי שנה 3 — נשאר 3.
+  // שנת פרויקט (1–5) של חודש מסוים, לפי תאריך החתימה: 12 חודשים לכל שנה. אחרי שנה 5 — נשאר 5.
   function projectYear(y, m, signIso) {
     var sd = parseDate(signIso); if (!sd) return 1;
     var months = (y - sd.getFullYear()) * 12 + (m - (sd.getMonth() + 1));
-    return months < 12 ? 1 : (months < 24 ? 2 : 3);
+    return Math.max(1, Math.min(5, Math.floor(months / 12) + 1));
+  }
+  // השיעור השנתי (%) לשנת פרויקט: אם השנה לא מולאה — השנה האחרונה שמולאה לפניה
+  function yearRate(sc, py) {
+    for (var k = py; k >= 1; k--) { var v = sc['y' + k]; if (v !== '' && v != null && isFinite(num(v, NaN))) return num(v); }
+    return 0;
   }
   /**
    * תחזית מדד: מתחילים מערך ידוע (fromY/fromM) ומתקדמים חודש-חודש עד החודש המבוקש,
-   * בריבית חודשית שנגזרת מהשיעור השנתי של שנת הפרויקט.
+   * בריבית חודשית שנגזרת מהשיעור השנתי של שנת הפרויקט שבה נמצא כל חודש.
    */
   function forecastIndex(fromVal, fromY, fromM, toY, toM, sc, signIso) {
     var v = num(fromVal), y = fromY, m = fromM;
@@ -221,9 +226,7 @@
     var guard = 0;
     while ((y * 100 + m) < (toY * 100 + toM) && guard++ < 600) {
       m++; if (m > 12) { m = 1; y++; }
-      var py = projectYear(y, m, signIso);
-      var annual = num(py === 1 ? sc.y1 : (py === 2 ? sc.y2 : sc.y3)) / 100;
-      v = v * Math.pow(1 + annual, 1 / 12);
+      v = v * Math.pow(1 + yearRate(sc, projectYear(y, m, signIso)) / 100, 1 / 12);
     }
     return v;
   }
@@ -248,7 +251,7 @@
     TRACKS: TRACKS, DEFAULT_STAGES: DEFAULT_STAGES, DEFAULT_T3: DEFAULT_T3, DEFAULT_SETTINGS: DEFAULT_SETTINGS,
     num: num, round2: round2, parseDate: parseDate, isoDate: isoDate, addMonths: addMonths,
     fmtDate: fmtDate, fmtMoney: fmtMoney, fmtPct: fmtPct,
-    effectivePrice: effectivePrice, schedule: schedule, requestCalc: requestCalc, stageStatus: stageStatus, STATUS_LABEL: STATUS_LABEL, HE_MONTHS: HE_MONTHS, DEFAULT_CATEGORIES: DEFAULT_CATEGORIES, EXP_STATUS: EXP_STATUS, expenseCalc: expenseCalc, DEFAULT_SCENARIOS: DEFAULT_SCENARIOS, projectYear: projectYear, forecastIndex: forecastIndex, monthName: monthName, knownMonthFor: knownMonthFor, nextPublication: nextPublication, ymKey: ymKey, validateStages: validateStages, sumPct: sumPct
+    effectivePrice: effectivePrice, schedule: schedule, requestCalc: requestCalc, stageStatus: stageStatus, STATUS_LABEL: STATUS_LABEL, HE_MONTHS: HE_MONTHS, DEFAULT_CATEGORIES: DEFAULT_CATEGORIES, EXP_STATUS: EXP_STATUS, expenseCalc: expenseCalc, DEFAULT_SCENARIOS: DEFAULT_SCENARIOS, projectYear: projectYear, yearRate: yearRate, forecastIndex: forecastIndex, monthName: monthName, knownMonthFor: knownMonthFor, nextPublication: nextPublication, ymKey: ymKey, validateStages: validateStages, sumPct: sumPct
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.HMCalc = api;
 })(this);

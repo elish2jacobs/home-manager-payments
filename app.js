@@ -10,7 +10,7 @@
   var FOLDER_MIME = 'application/vnd.google-apps.folder';
   var SHEET_MIME = 'application/vnd.google-apps.spreadsheet';
   var SCHEMA_VERSION = 1;
-  var APP_VERSION = '0.9.2';
+  var APP_VERSION = '0.9.3';
 
   var ROOT_NAME = 'פרויקט הבית שלי';
   var DATA_NAME = 'נתוני הבית';
@@ -28,7 +28,7 @@
     Journal: ['id', 'date', 'title', 'description', 'area', 'links', 'notes', 'updatedAt'],
     Tasks: ['id', 'title', 'description', 'area', 'dueDate', 'owner', 'priority', 'status', 'notes', 'updatedAt'],
     IndexHistory: ['year', 'month', 'value', 'publishedAt', 'source', 'updatedAt'],
-    Scenarios: ['id', 'name', 'y1', 'y2', 'y3', 'updatedAt'],
+    Scenarios: ['id', 'name', 'y1', 'y2', 'y3', 'updatedAt', 'y4', 'y5'],
     ActivityLog: ['at', 'user', 'action', 'entity', 'entityId', 'details']
   };
 
@@ -113,7 +113,7 @@
         if (!p) return;
         if (resp.error) { p.reject(new AuthError(resp.error_description || resp.error)); return; }
         if (!google.accounts.oauth2.hasGrantedAllScopes(resp, 'https://www.googleapis.com/auth/drive.file')) {
-          p.reject(new AuthError('לא אושרה גישה ל-Google Drive. יש לסמן את תיבת הגישה לקבצים כדי שהאפליקציה תוכל לשמור את הנתונים שלך.'));
+          var se = new AuthError('לא אושרה גישה ל-Google Drive.'); se.code = 'scope'; p.reject(se);
           return;
         }
         state.token = resp.access_token;
@@ -289,7 +289,7 @@
   function loadExpenses() { return readRows('Expenses').then(function (r) { state.expenses = r.filter(function (x) { return x.id; }); return state.expenses; }); }
   function loadScenarios() {
     return readRows('Scenarios').then(function (r) {
-      state.scenarios = r.filter(function (x) { return x.id; }).map(function (x) { return { id: x.id, name: x.name, y1: C.num(x.y1), y2: C.num(x.y2), y3: C.num(x.y3), _row: x._row }; });
+      state.scenarios = r.filter(function (x) { return x.id; }).map(function (x) { return { id: x.id, name: x.name, y1: x.y1 || '', y2: x.y2 || '', y3: x.y3 || '', y4: x.y4 || '', y5: x.y5 || '', _row: x._row }; });
       return state.scenarios;
     });
   }
@@ -479,6 +479,13 @@
   function handleError(e) {
     console.error('[HMP]', e);
     if (e instanceof AuthError) {
+      if (e.code === 'scope') {
+        var box = $('login-err');
+        box.innerHTML = '<b>לא אושרה גישה ל-Google Drive.</b><br>במסך של Google צריך <b>לסמן את התיבה</b> ליד "הצגה, עריכה, יצירה ומחיקה רק של הקבצים הספציפיים ב-Google Drive…" ואז ללחוץ "המשך". בלי זה האפליקציה לא יכולה לשמור את הנתונים שלך.<br>לחץ שוב על הכפתור כדי לנסות.';
+        box.hidden = false;
+        if (!$('screen-app').hidden) { showReconnect(); toast('לא אושרה גישה ל-Google Drive — יש לסמן את התיבה במסך של Google', 'err'); return; }
+        showLogin(); return;
+      }
       if (!$('screen-app').hidden) { showReconnect(); return; }
       showLogin(); toast(e.message, 'err'); return;
     }
@@ -509,6 +516,8 @@
     mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
     tasks: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 3 3 5-6"/>',
     x: '<path d="M6 6l12 12M18 6 6 18"/>',
+    sim: '<path d="M3 20h18"/><path d="m4 16 5-5 4 3 7-8"/><path d="M16 6h4v4"/>',
+    left: '<path d="m15 18-6-6 6-6"/>',
     report: '<path d="M5 3h14v18H5z"/><path d="M9 16v-3M12 16V9M15 16v-5"/>',
     download: '<path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/>',
     grid: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
@@ -526,6 +535,7 @@
     { id: 'documents', title: 'מסמכים', icon: 'docs' },
     { id: 'reports', title: 'דוחות וייצוא', icon: 'report' },
     { id: 'calculator', title: 'מחשבון מדד', icon: 'calc' },
+    { id: 'simulation', title: 'סימולציית מדד לאבני דרך', short: 'סימולציה', icon: 'sim' },
     { id: 'settings', title: 'הגדרות', icon: 'settings' },
     { id: 'more', title: 'עוד', icon: 'menu', mobile: true, mobileOnly: true }
   ];
@@ -536,11 +546,18 @@
   }
   function buildNav() {
     $('nav').innerHTML = ROUTES.filter(function (r) { return !r.mobileOnly; }).map(function (r) {
-      return '<a href="#/' + r.id + '" data-route="' + r.id + '">' + icon(r.icon) + '<span>' + r.title + '</span></a>';
+      return '<a href="#/' + r.id + '" data-route="' + r.id + '" title="' + r.title + '">' + icon(r.icon) + '<span>' + r.title + '</span></a>';
     }).join('');
+    applyNavCollapsed();
     $('bottomnav').innerHTML = ROUTES.filter(function (r) { return r.mobile; }).map(function (r) {
       return '<a href="#/' + r.id + '" data-route="' + r.id + '">' + icon(r.icon) + '<span>' + (r.short || r.title) + '</span></a>';
     }).join('');
+  }
+  function navCollapsed() { try { return localStorage.getItem('hmp.navCollapsed') === '1'; } catch (e) { return false; } }
+  function applyNavCollapsed() {
+    var c = navCollapsed(), b = document.querySelector('.nav-toggle');
+    document.documentElement.classList.toggle('nav-collapsed', c);
+    if (b) { var l = c ? 'הרחבת התפריט' : 'צמצום התפריט'; b.setAttribute('aria-label', l); b.title = l; b.setAttribute('aria-expanded', String(!c)); }
   }
   function currentRoute() {
     var parts = (location.hash || '').replace(/^#\//, '').split('/');
@@ -706,8 +723,28 @@
     { t: 'תאריכים', d: 'תאריך החתימה משמש לחישוב מועדי התשלומים.' },
     { t: 'מחיר ומסלול', d: 'בחר את המסלול שבחוזה שלך. אפשר לשנות אחר כך בהגדרות.' },
     { t: 'הצמדה למדד', d: 'רלוונטי רק למסלול אבני דרך עם הצמדה.' },
-    { t: 'לוח תשלומים', d: 'נטען לוח ברירת מחדל. ערוך לפי החוזה שלך, או אשר כמו שהוא.' }
+    { t: 'לוח תשלומים', d: 'נטען לוח ברירת מחדל. ערוך לפי החוזה שלך, או אשר כמו שהוא.' },
+    { t: 'סיכום', d: 'בדוק שהכול נכון. אפשר לחזור לכל שלב ולתקן.' }
   ];
+  function wizSummary() {
+    var d = draft, t = String(d.track), list = draftList(), sp = C.sumPct(list);
+    var row = function (k, v) { return v === '' || v == null ? '' : kv(k, v); };
+    var g = function (title, inner) { return inner ? '<div class="sum-grp"><h3>' + title + '</h3>' + inner + '</div>' : ''; };
+    var bm = C.ymKey(d.baseIndexMonth);
+    return '<div class="wiz-sum">' +
+      g('פרויקט', row('שם', esc(d.projectName)) + row('קבלן', esc(d.contractor)) + row('כתובת', esc(d.address ? d.address + (d.aptNo ? ', דירה ' + d.aptNo : '') : ''))) +
+      g('תאריכים', row('חתימה', d.signDate ? '<span class="num">' + C.fmtDate(d.signDate) + '</span>' : '') + row('מסירה משוערת', d.deliveryDate ? '<span class="num">' + C.fmtDate(d.deliveryDate) + '</span>' : '')) +
+      g('מחיר ומסלול', row('מחיר בסיס', '<span class="num">' + C.fmtMoney(C.num(d.basePrice)) + '</span>') + row('מסלול', esc(C.TRACKS[t].name)) +
+        (t !== '1' ? row('מחיר אפקטיבי', '<span class="num">' + C.fmtMoney(C.effectivePrice(d)) + '</span>') : '')) +
+      (t === '1' ? g('הצמדה', row('מדד בסיס', d.baseIndex ? '<span class="num">' + esc(d.baseIndex) + '</span>' : '<span class="badge warn">לא הוזן</span>') +
+        row('חודש בסיס', bm ? C.monthName(bm.y, bm.m) : '<span class="badge warn">לא הוזן</span>') +
+        row('חלק פטור', C.fmtPct(C.num(d.exemptPct))) + row('אחוז צמוד בכל תשלום', C.fmtPct(C.num(d.linkedPct))) +
+        row('ירידה מתחת למדד הבסיס', String(d.indexFloor) === 'false' ? 'מותרת' : 'לא')) : '') +
+      g('לוח תשלומים', row('אבני דרך', list.length) + row('סה״כ אחוזים', '<span class="' + (Math.abs(sp - 100) > 0.01 ? 'badge warn' : 'num') + '">' + C.fmtPct(sp) + '</span>') +
+        row('תשלום ראשון', list[0] ? esc(list[0].name) + ' · ' + C.fmtPct(C.num(list[0].pct)) : '') + row('תשלום אחרון', list.length ? esc(list[list.length - 1].name) : '')) +
+      g('תצוגה', row('סכומים', 'כולל מע״מ (' + esc(d.vatRate || '18') + '%) · אפשר לשנות בהגדרות')) +
+      '</div>';
+  }
   function wizardView() {
     var n = wizardStep;
     var skipIndex = String(draft.track) !== '1';
@@ -726,7 +763,8 @@
       '<div class="kv"><span class="k">מחיר אפקטיבי</span><b class="num" id="eff-price"></b></div>';
     if (n === 4) body = indexFields();
     if (n === 5) body = stageEditor() + '<div class="kv"><span class="k">מחיר אפקטיבי</span><b class="num" id="eff-price"></b></div>';
-    var last = n === 5;
+    if (n === 6) body = wizSummary();
+    var last = n === 6;
     return '<section class="card wizard">' +
       '<ol class="steps">' + steps + '</ol>' +
       '<div><h2>' + WIZ[n - 1].t + '</h2><p class="muted small" style="margin:4px 0 0">' + WIZ[n - 1].d + '</p></div>' +
@@ -734,7 +772,9 @@
       '<div class="error-box" id="wiz-err" hidden></div>' +
       '<div class="wiz-nav">' +
       (n > 1 ? '<button type="button" class="btn btn-ghost" data-action="wiz-back">הקודם</button>' : '<span></span>') +
-      '<button type="button" class="btn btn-primary" data-action="' + (last ? 'wiz-finish' : 'wiz-next') + '">' + (last ? 'סיום ושמירה' : 'הבא') + '</button>' +
+      (last ? '<div class="row">' + (canInstall() ? '<button type="button" class="btn btn-secondary" data-action="wiz-finish" data-install="1">' + icon('download', 16) + 'שמירה והתקנת האפליקציה</button>' : '') +
+        '<button type="button" class="btn btn-primary" data-action="wiz-finish">סיום ושמירה</button></div>'
+        : '<button type="button" class="btn btn-primary" data-action="wiz-next">הבא</button>') +
       '</div></section>';
   }
   function wizValidate(n) {
@@ -767,6 +807,7 @@
   function finishWizard(btn) {
     var errs = wizValidate(5).concat(wizValidate(2)).concat(wizValidate(3));
     if (errs.length) { showErrors('wiz-err', errs); return; }
+    if (btn.hasAttribute('data-install')) installApp(); // חייב לקרות מיד בלחיצה (דרישת הדפדפן)
     btn.disabled = true;
     var payload = draftSettingsPayload();
     payload.setupComplete = 'true';
@@ -1080,6 +1121,7 @@
     expenses: function () { if (!isSetup()) return needSetupCard(); return expensesView(); },
     documents: function () { return documentsView(); },
     reports: function () { return reportsView(); },
+    simulation: function () { if (!isSetup()) return needSetupCard(); return simView(); },
     journal: function () { return journalView(); },
     contacts: function () { return contactsView(); },
     tasks: function () { return tasksView(); },
@@ -1726,6 +1768,241 @@
     }).join('') + '</tbody></table></div>';
   }
 
+  // ---------- סימולציה — אבני דרך ועליית מדד ----------
+  // עצמאית לגמרי: לא משנה שום נתון אמיתי. ההגדרות שלה נשמרות במפתחות sim* ובגיליון Scenarios.
+  var SIM_YEARS = 5;
+  function defaultScenarios() {
+    return C.DEFAULT_SCENARIOS.map(function (x) { return { id: x.id, name: x.name, y1: String(x.y1), y2: String(x.y2), y3: String(x.y3), y4: '', y5: '' }; });
+  }
+  function simScenarios() { return state.scenarios.length ? state.scenarios : defaultScenarios(); }
+  function jsonSetting(k, d) { try { var v = JSON.parse(state.s[k] || ''); return v == null ? d : v; } catch (e) { return d; } }
+  function simOpts() {
+    var s = state.s;
+    return {
+      paid: s.simPaid !== 'false', reqs: s.simReqs !== 'false',
+      start: s.simStart || 'latest', manIdx: s.simManIdx || '', manMonth: s.simManMonth || '',
+      dates: jsonSetting('simDates', {}), hidden: jsonSetting('simHidden', []), sel: s.simSel || ''
+    };
+  }
+  var simPending = {}, simTimer = null, simChain = Promise.resolve();
+  function simSave(obj) {
+    Object.keys(obj).forEach(function (k) { state.s[k] = obj[k]; simPending[k] = obj[k]; });
+    clearTimeout(simTimer);
+    simTimer = setTimeout(function () {
+      var o = simPending; simPending = {};
+      simChain = simChain.then(function () { return withSync(saveSettings(o)); }).catch(handleError);
+    }, 700);
+  }
+  // מדד בבסיס החוזה לחודש (y,m) לפי נקודת המוצא והתרחיש
+  function simIndexAt(y, m, sc, o, s) {
+    var key = y * 100 + m, f = contractFactor(s);
+    if (o.start === 'manual') {
+      var mm = C.ymKey(o.manMonth), mv = C.num(o.manIdx);
+      if (mm && mv > 0) return key <= mm.y * 100 + mm.m ? mv : C.forecastIndex(mv, mm.y, mm.m, y, m, sc, s.signDate);
+    }
+    if (o.start === 'latest' && state.cbs && f) {
+      var raw = cbsValue(y, m);
+      if (raw != null) return raw * f;
+      var lat = cbsLatest();
+      if (lat && key > lat.y * 100 + lat.m) return C.forecastIndex(lat.v * f, lat.y, lat.m, y, m, sc, s.signDate);
+    }
+    var bm = C.ymKey(s.baseIndexMonth), bi = C.num(s.baseIndex);
+    if (!(bi > 0)) return null;
+    if (!bm || key <= bm.y * 100 + bm.m) return bi;
+    return C.forecastIndex(bi, bm.y, bm.m, y, m, sc, s.signDate);
+  }
+  function simulate() {
+    var s = state.s, o = simOpts(), actual1 = String(s.track) === '1';
+    var s1 = clone(s); s1.track = '1';
+    var list = state.stages.length ? state.stages : C.DEFAULT_STAGES;
+    var rows = C.schedule(s1, list), real = actual1 ? ledger() : [];
+    var cum = 0;
+    var base = rows.map(function (r, i) {
+      var id = list[i].id || ('st-' + i), rr = real.filter(function (x) { return x.stageId === id; })[0];
+      cum += C.num(r.pct);
+      var mode = 'sim';
+      if (rr && o.paid && rr.st.status === 'paid') mode = 'paid';
+      else if (rr && o.reqs && reqsOf(id).length) mode = 'req';
+      return { id: id, i: i, name: r.name, pct: C.num(r.pct), cumPct: C.round2(cum), planDate: r.date || '', date: o.dates[id] || r.date || '', row: r, real: rr, mode: mode };
+    });
+    var bi = C.num(s.baseIndex);
+    var scen = simScenarios().map(function (sc) {
+      var tAdj = 0, tTot = 0, cTot = 0;
+      var st = base.map(function (b) {
+        var adj, total, idx = null;
+        if (b.mode !== 'sim') { adj = b.real.st.adj; total = b.real.st.expected; }
+        else {
+          var km = C.knownMonthFor(b.date); adj = 0;
+          if (km && bi > 0 && b.row.linkedBase > 0) {
+            idx = simIndexAt(km.y, km.m, sc, o, s);
+            if (idx) { var rate = idx / bi - 1; if (String(s.indexFloor) !== 'false' && rate < 0) rate = 0; adj = C.round2(b.row.linkedBase * rate); }
+          } else if (km && bi > 0) idx = simIndexAt(km.y, km.m, sc, o, s);
+          total = C.round2(b.row.base + adj);
+        }
+        tAdj += adj; tTot += total; cTot += total;
+        return { adj: C.round2(adj), total: C.round2(total), cum: C.round2(cTot), idx: idx };
+      });
+      return { sc: sc, st: st, adj: C.round2(tAdj), total: C.round2(tTot) };
+    });
+    var paidNow = actual1 ? real.reduce(function (a, r) { return a + r.st.paid; }, 0) : 0;
+    var todayAdj = actual1 ? real.reduce(function (a, r) { return a + r.st.adj + r.est; }, 0) : null;
+    return { o: o, base: base, scen: scen, paidNow: paidNow, todayAdj: todayAdj, actual1: actual1, bi: bi };
+  }
+  function simVisible(sim) { return sim.scen.filter(function (x) { return sim.o.hidden.indexOf(x.sc.id) < 0; }); }
+  function simSelected(sim) {
+    var vis = simVisible(sim);
+    return sim.scen.filter(function (x) { return x.sc.id === sim.o.sel; })[0] || vis[0] || sim.scen[0];
+  }
+  function ratesLabel(sc) {
+    var out = [];
+    for (var k = 1; k <= SIM_YEARS; k++) if (sc['y' + k] !== '' && sc['y' + k] != null) out.push(C.num(sc['y' + k]) + '%');
+    return out.join(' · ');
+  }
+  var simMatrixMode = (function () { try { return localStorage.getItem('hmp.simMatrix') || 'adj'; } catch (e) { return 'adj'; } })();
+  var SIM_MODE_LABEL = { paid: 'שולם', req: 'דרישה', sim: 'סימולציה' };
+  function simView() {
+    var s = state.s;
+    if (!(C.num(s.baseIndex) > 0) || !s.signDate) return '<section class="card"><div class="empty">' + icon('sim', 28) + '<b>חסרים נתונים לסימולציה</b><span>יש להזין בהגדרות תאריך חתימה, מדד בסיס וחודש בסיס.</span><a class="btn btn-primary btn-sm" href="#/settings">להגדרות</a></div></section>';
+    var sim = simulate(), o = sim.o, vis = simVisible(sim), sel = simSelected(sim);
+    var lat = cbsLatest();
+    // אפשרויות
+    var opts = '<section class="card no-print"><h2>הגדרות הסימולציה</h2>' +
+      '<p class="hint">כלי תכנון בלבד — לא משנה שום נתון אמיתי באפליקציה.' + (sim.actual1 ? '' : ' המסלול בחוזה שלך אינו צמוד מדד, לכן החישוב כאן הוא "מה היה אילו": לפי הכללים של מסלול צמוד (חלק פטור ואחוז צמוד מההגדרות).') + '</p>' +
+      '<div class="sim-opts">' +
+      (sim.actual1 ? '<label class="sim-check"><input type="checkbox" data-sim="simPaid"' + (o.paid ? ' checked' : '') + '> להתחשב בתשלומים ששולמו</label>' +
+        '<label class="sim-check"><input type="checkbox" data-sim="simReqs"' + (o.reqs ? ' checked' : '') + '> להתחשב בדרישות תשלום</label>' : '') +
+      '<div class="field"><label for="sim-start">נקודת מוצא של המדד</label><select id="sim-start" data-sim="simStart">' +
+      [['latest', 'המדד האחרון שפורסם' + (lat ? ' (' + C.monthName(lat.y, lat.m) + ')' : '')], ['base', 'מדד הבסיס בחוזה'], ['manual', 'ערך ידני']].map(function (x) { return '<option value="' + x[0] + '"' + (o.start === x[0] ? ' selected' : '') + '>' + esc(x[1]) + '</option>'; }).join('') + '</select></div>' +
+      (o.start === 'manual' ? '<div class="field"><label for="sim-mi">מדד (בבסיס החוזה)</label><input id="sim-mi" type="number" step="any" inputmode="decimal" data-sim="simManIdx" value="' + esc(o.manIdx) + '"></div>' +
+        '<div class="field"><label for="sim-mm">חודש המדד</label><input id="sim-mm" type="month" data-sim="simManMonth" value="' + esc(o.manMonth) + '"></div>' : '') +
+      '</div></section>';
+    // תרחישים — סינון
+    var chips = '<div class="sim-chips">' + sim.scen.map(function (x) {
+      var on = o.hidden.indexOf(x.sc.id) < 0;
+      return '<button type="button" class="chip-btn' + (on ? ' on' : '') + '" aria-pressed="' + on + '" data-action="sim-toggle" data-id="' + esc(x.sc.id) + '">' + esc(x.sc.name) + '</button>';
+    }).join('') + '</div>';
+    // השוואה
+    var mn = null, mx = null;
+    vis.forEach(function (x) { if (!mn || x.adj < mn.adj) mn = x; if (!mx || x.adj > mx.adj) mx = x; });
+    var maxAdj = Math.max.apply(null, vis.map(function (x) { return Math.abs(x.adj); }).concat([1]));
+    var cmp = '<div class="table-wrap"><table class="tbl rep-tbl sim-cmp"><thead><tr><th>תרחיש</th><th>קצב שנתי (שנה 1 ←)</th><th class="n">סך הצמדה</th><th class="n">סה״כ לקבלן</th>' + (sim.actual1 ? '<th class="n">נשאר לשלם</th>' : '') + (sim.todayAdj != null ? '<th class="n">מול "נכון להיום"</th>' : '') + '<th></th></tr></thead><tbody>' +
+      vis.map(function (x) {
+        var tag = x === mn && vis.length > 1 ? '<span class="badge ok">הזול</span>' : (x === mx && vis.length > 1 ? '<span class="badge warn">היקר</span>' : '');
+        return '<tr' + (x === sel ? ' class="on"' : '') + '><td><b>' + esc(x.sc.name) + '</b></td><td class="num">' + esc(ratesLabel(x.sc)) + '</td>' +
+          '<td class="n">' + M(x.adj) + '</td><td class="n">' + M(x.total) + '</td>' +
+          (sim.actual1 ? '<td class="n">' + M(x.total - sim.paidNow) + '</td>' : '') +
+          (sim.todayAdj != null ? '<td class="n">' + (x.adj - sim.todayAdj >= 0 ? '+' : '') + M(x.adj - sim.todayAdj) + '</td>' : '') + '<td>' + tag + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+    var bars = '<div class="sim-bars" role="img" aria-label="סך הצמדה לפי תרחיש">' + vis.map(function (x) {
+      return '<div class="bar-row"><span class="bar-lbl">' + esc(x.sc.name) + '</span><div class="bar thin"><div style="width:' + Math.max(0, x.adj / maxAdj * 100).toFixed(1) + '%"></div></div><span class="small num">' + M(x.adj) + '</span></div>';
+    }).join('') + '</div>';
+    var cmpCard = '<section class="card"><div class="row between"><h2>השוואת תרחישים</h2><div class="row no-print">' +
+      '<button type="button" class="btn btn-secondary btn-sm" data-action="sim-edit">' + icon('edit', 16) + 'עריכת תרחישים</button></div></div>' +
+      '<p class="hint no-print">לחיצה על תרחיש מציגה או מסתירה אותו בכל הטבלאות.</p>' + chips + vatNote() + cmp + bars +
+      (sim.todayAdj != null ? '<p class="hint">"נכון להיום" = ההצמדה בדשבורד: בפועל לפי דרישות, ולשאר ' + estBasisLabel() + ' (' + M(sim.todayAdj) + ').</p>' : '') + '</section>';
+    // מטריצה — אבני דרך × תרחישים
+    var mode = simMatrixMode;
+    var val = function (st) { return mode === 'total' ? st.total : (mode === 'cum' ? st.cum : st.adj); };
+    var matrix = '<section class="card"><div class="row between"><h2>לפי אבני דרך</h2>' +
+      '<div class="seg small-seg no-print" role="radiogroup" aria-label="מה להציג">' + [['adj', 'תוספת הצמדה'], ['total', 'סה״כ לתשלום'], ['cum', 'סה״כ מצטבר']].map(function (x) {
+        return '<button type="button" role="radio" aria-checked="' + (mode === x[0]) + '" data-action="sim-mode" data-mode="' + x[0] + '">' + x[1] + '</button>';
+      }).join('') + '</div></div>' +
+      '<div class="table-wrap"><table class="tbl rep-tbl"><thead><tr><th>#</th><th>אבן דרך</th><th>תאריך</th><th class="n">%</th><th class="n">% מצטבר</th><th class="n">בסיס</th>' +
+      vis.map(function (x) { return '<th class="n">' + esc(x.sc.name) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+      sim.base.map(function (b, i) {
+        return '<tr><td>' + (i + 1) + '</td><td>' + esc(b.name) + (b.mode !== 'sim' ? ' <span class="badge muted-b">' + SIM_MODE_LABEL[b.mode] + '</span>' : '') + '</td><td class="num nowrap">' + C.fmtDate(b.date) + '</td>' +
+          '<td class="n">' + C.fmtPct(b.pct) + '</td><td class="n">' + C.fmtPct(b.cumPct) + '</td><td class="n">' + M(b.row.base) + '</td>' +
+          vis.map(function (x) { return '<td class="n">' + M(val(x.st[i])) + '</td>'; }).join('') + '</tr>';
+      }).join('') + '</tbody><tfoot><tr><td></td><td>סה״כ</td><td></td><td class="n">' + C.fmtPct(sim.base.length ? sim.base[sim.base.length - 1].cumPct : 0) + '</td><td></td><td class="n">' + M(sim.base.reduce(function (a, b) { return a + b.row.base; }, 0)) + '</td>' +
+      vis.map(function (x) { return '<td class="n">' + (mode === 'cum' ? M(x.total) : M(mode === 'total' ? x.total : x.adj)) + '</td>'; }).join('') + '</tr></tfoot></table></div></section>';
+    // פירוט לתרחיש נבחר — עם תאריכים לעריכה
+    var anyDate = Object.keys(o.dates).length > 0;
+    var detail = '<section class="card"><div class="row between"><h2>פירוט לתרחיש</h2>' +
+      '<div class="field no-print sim-sel"><label for="sim-sel" class="sr-only">תרחיש</label><select id="sim-sel" data-sim="simSel">' + sim.scen.map(function (x) { return '<option value="' + esc(x.sc.id) + '"' + (x === sel ? ' selected' : '') + '>' + esc(x.sc.name) + '</option>'; }).join('') + '</select></div></div>' +
+      '<p class="hint no-print">אפשר לשנות כאן תאריכים — רק לצורך הסימולציה.' + (anyDate ? ' <button type="button" class="btn btn-ghost btn-sm" data-action="sim-reset-dates">איפוס לתאריכי ההגדרות</button>' : '') + '</p>' +
+      '<div class="table-wrap"><table class="tbl rep-tbl"><thead><tr><th>#</th><th>אבן דרך</th><th>סטטוס</th><th>תאריך</th><th class="n">%</th><th class="n">% מצטבר</th><th class="n">בסיס</th><th class="n">מדד משוער</th><th class="n">הצמדה</th><th class="n">סה״כ</th><th class="n">סה״כ מצטבר</th></tr></thead><tbody>' +
+      sim.base.map(function (b, i) {
+        var st = sel.st[i], changed = b.date !== b.planDate;
+        return '<tr><td>' + (i + 1) + '</td><td>' + esc(b.name) + '</td><td><span class="badge ' + (b.mode === 'sim' ? 'info' : 'muted-b') + '">' + SIM_MODE_LABEL[b.mode] + '</span></td>' +
+          '<td>' + (b.mode === 'sim' ? '<input type="date" class="sim-date' + (changed ? ' changed' : '') + '" data-sim-date="' + esc(b.id) + '" value="' + esc(b.date) + '" aria-label="תאריך ' + esc(b.name) + '"><span class="print-only num">' + C.fmtDate(b.date) + '</span>' : '<span class="num nowrap">' + C.fmtDate(b.date) + '</span>') + '</td>' +
+          '<td class="n">' + C.fmtPct(b.pct) + '</td><td class="n">' + C.fmtPct(b.cumPct) + '</td><td class="n">' + M(b.row.base) + '</td>' +
+          '<td class="n num">' + (st.idx ? st.idx.toFixed(2) : '—') + '</td><td class="n">' + M(st.adj) + '</td><td class="n">' + M(st.total) + '</td><td class="n">' + M(st.cum) + '</td></tr>';
+      }).join('') + '</tbody><tfoot><tr><td></td><td>סה״כ</td><td></td><td></td><td></td><td></td><td class="n">' + M(sim.base.reduce(function (a, b) { return a + b.row.base; }, 0)) + '</td><td></td><td class="n">' + M(sel.adj) + '</td><td class="n">' + M(sel.total) + '</td><td></td></tr></tfoot></table></div>' +
+      '<p class="hint">מדד הבסיס בחוזה: ' + sim.bi + '. המדד הקובע לכל אבן דרך — המדד הידוע בתאריך שלה. שנת פרויקט = 12 חודשים מתאריך החתימה; כל חודש גדל לפי הקצב של השנה שהוא נמצא בה.</p></section>';
+    return opts + cmpCard + matrix + detail;
+  }
+  // עריכת תרחישים (חלון)
+  function scenRowHtml(sc) {
+    var ys = ''; for (var k = 1; k <= SIM_YEARS; k++) ys += '<td><input type="number" step="any" inputmode="decimal" data-y="' + k + '" value="' + esc(sc['y' + k] == null ? '' : sc['y' + k]) + '" aria-label="שנה ' + k + '"></td>';
+    return '<tr data-id="' + esc(sc.id) + '"><td><input type="text" data-n value="' + esc(sc.name) + '" aria-label="שם התרחיש"></td>' + ys +
+      '<td><button type="button" class="icon-btn danger" data-action="scen-del" aria-label="מחיקת תרחיש">' + icon('trash', 18) + '</button></td></tr>';
+  }
+  function scenEditorHtml(list) {
+    var h = ''; for (var k = 1; k <= SIM_YEARS; k++) h += '<th>שנה ' + k + ' (%)</th>';
+    return '<p class="hint">קצב עליית מדד שנתי לכל שנת פרויקט (12 חודשים מהחתימה). שנה ריקה = ממשיכים עם השנה האחרונה שמולאה.</p>' +
+      '<div class="table-wrap"><table class="tbl scen-tbl"><thead><tr><th>שם</th>' + h + '<th></th></tr></thead><tbody id="scen-body">' + list.map(scenRowHtml).join('') + '</tbody></table></div>' +
+      '<div class="row"><button type="button" class="btn btn-secondary btn-sm" data-action="scen-add">' + icon('plus', 16) + 'תרחיש חדש</button>' +
+      '<button type="button" class="btn btn-ghost btn-sm" data-action="scen-defaults">חזרה לברירת המחדל</button></div>' +
+      '<div class="error-box" id="scen-err" hidden></div>' +
+      '<div class="row end"><button type="button" class="btn btn-ghost" data-action="modal-close">ביטול</button><button type="button" class="btn btn-primary" data-action="scen-save">שמירה</button></div>';
+  }
+  function openScenEditor() { openModal('עריכת תרחישים', scenEditorHtml(simScenarios())); form = { kind: 'scen', data: {} }; }
+  function readScenEditor() {
+    return Array.prototype.map.call(document.querySelectorAll('#scen-body tr'), function (tr) {
+      var o = { id: tr.getAttribute('data-id'), name: tr.querySelector('[data-n]').value.trim() };
+      Array.prototype.forEach.call(tr.querySelectorAll('[data-y]'), function (inp) { o['y' + inp.getAttribute('data-y')] = inp.value.trim(); });
+      return o;
+    });
+  }
+  function saveScenEditor(btn) {
+    var list = readScenEditor(), errs = [];
+    if (!list.length) errs.push('צריך לפחות תרחיש אחד');
+    list.forEach(function (x, i) {
+      if (!x.name) errs.push('לתרחיש ' + (i + 1) + ' חסר שם');
+      if (x.y1 === '' || !isFinite(C.num(x.y1, NaN))) errs.push('ב"' + (x.name || 'תרחיש ' + (i + 1)) + '" חסר אחוז לשנה 1');
+      for (var k = 1; k <= SIM_YEARS; k++) { var v = x['y' + k]; if (v !== '' && (!isFinite(C.num(v, NaN)) || Math.abs(C.num(v)) > 50)) errs.push('אחוז לא תקין ב"' + x.name + '", שנה ' + k); }
+    });
+    if (errs.length) { showErrors('scen-err', errs); return; }
+    btn.disabled = true;
+    var t = nowIso();
+    withSync(replaceRows('Scenarios', list.map(function (x) { return { id: x.id, name: x.name, y1: x.y1, y2: x.y2, y3: x.y3, y4: x.y4, y5: x.y5, updatedAt: t }; })).then(loadScenarios), 'התרחישים נשמרו')
+      .then(function () { closeModal(); softRerender(); }).catch(handleError).then(function () { btn.disabled = false; });
+  }
+  // לדוחות
+  function simReport() {
+    var sim = simulate(), vis = simVisible(sim), sel = simSelected(sim);
+    function mc(l) { return { label: l, type: 'money' }; }
+    var head = [{ label: '#', type: 'num', w: 5 }, { label: 'אבן דרך', type: 'text', w: 24 }, { label: 'תאריך', type: 'date' }, { label: '%', type: 'pct', w: 7 }, { label: '% מצטבר', type: 'pct', w: 9 }, mc('בסיס')];
+    var baseCols = function (b, i) { return [i + 1, b.name + (b.mode !== 'sim' ? ' (' + SIM_MODE_LABEL[b.mode] + ')' : ''), b.date, b.pct, b.cumPct, V(b.row.base)]; };
+    var baseTot = V(sim.base.reduce(function (a, b) { return a + b.row.base; }, 0));
+    function matrixTable(name, pick, totPick) {
+      return { name: name, title: name, cols: head.concat(vis.map(function (x) { return mc(x.sc.name); })),
+        rows: sim.base.map(function (b, i) { return baseCols(b, i).concat(vis.map(function (x) { return V(pick(x.st[i])); })); }),
+        total: ['', 'סה״כ', '', '', '', baseTot].concat(vis.map(function (x) { return V(totPick(x)); })) };
+    }
+    var cmpCols = [{ label: 'תרחיש', type: 'text', w: 22 }, { label: 'קצב שנתי', type: 'text', w: 24 }, mc('סך הצמדה'), mc('סה״כ לקבלן')];
+    if (sim.actual1) cmpCols.push(mc('נשאר לשלם'));
+    if (sim.todayAdj != null) cmpCols.push(mc('הפרש מ"נכון להיום"'));
+    var cmpRows = vis.map(function (x) {
+      var r = [x.sc.name, ratesLabel(x.sc), V(x.adj), V(x.total)];
+      if (sim.actual1) r.push(V(x.total - sim.paidNow));
+      if (sim.todayAdj != null) r.push(V(x.adj - sim.todayAdj));
+      return r;
+    });
+    var o = sim.o;
+    var opt = (sim.actual1 ? (o.paid ? 'כולל תשלומים ששולמו' : 'ללא תשלומים ששולמו') + ' · ' + (o.reqs ? 'כולל דרישות' : 'ללא דרישות') + ' · ' : '') +
+      'נקודת מוצא: ' + ({ latest: 'המדד האחרון שפורסם', base: 'מדד הבסיס', manual: 'ידני ' + o.manIdx + ' (' + o.manMonth + ')' })[o.start];
+    return { title: 'סימולציה — אבני דרך ועליית מדד', tables: [
+      { name: 'השוואת תרחישים', cols: cmpCols, rows: cmpRows },
+      matrixTable('תוספת הצמדה', function (st) { return st.adj; }, function (x) { return x.adj; }),
+      matrixTable('סה״כ לתשלום', function (st) { return st.total; }, function (x) { return x.total; }),
+      matrixTable('סה״כ מצטבר', function (st) { return st.cum; }, function (x) { return x.total; }),
+      { name: 'פירוט ' + sel.sc.name, title: 'פירוט — ' + sel.sc.name, cols: head.concat([{ label: 'מדד משוער', type: 'dec', w: 11 }, mc('הצמדה'), mc('סה״כ'), mc('סה״כ מצטבר')]),
+        rows: sim.base.map(function (b, i) { var st = sel.st[i]; return baseCols(b, i).concat([st.idx ? C.round2(st.idx) : '', V(st.adj), V(st.total), V(st.cum)]); }),
+        total: ['', 'סה״כ', '', '', '', baseTot, '', V(sel.adj), V(sel.total), ''] }
+    ], hint: 'כלי תכנון בלבד. ' + opt + '.' };
+  }
+
   // ---------- קובץ Excel (xlsx) — כתיבה ללא ספריות ----------
   var XLSX = (function () {
     var CRC = (function () { var t = [], c, n, k; for (n = 0; n < 256; n++) { c = n; for (k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
@@ -1833,7 +2110,8 @@
     { id: 'contractor', title: 'לוח תשלומי קבלן' },
     { id: 'expenses', title: 'הוצאות לפי קטגוריה' },
     { id: 'payments', title: 'כל התשלומים' },
-    { id: 'cashflow', title: 'תזרים צפוי' }
+    { id: 'cashflow', title: 'תזרים צפוי' },
+    { id: 'simulation', title: 'סימולציית מדד' }
   ];
   var repState = { id: 'summary', from: '', to: '', type: '', funding: '' };
   function V(n) { return C.round2(vatExcl() ? C.num(n) / (1 + vatRate()) : C.num(n)); }
@@ -1857,6 +2135,10 @@
     return Object.keys(set).sort(heCmp);
   }
   function buildReport(id) {
+    if (id === 'simulation') {
+      if (!(C.num(state.s.baseIndex) > 0) || !state.s.signDate) return { title: 'סימולציית מדד', tables: [{ name: 'סימולציה', cols: [{ label: 'הודעה', type: 'text', w: 50 }], rows: [['חסרים בהגדרות תאריך חתימה, מדד בסיס וחודש בסיס']] }] };
+      return simReport();
+    }
     function mc(label) { return { label: label, type: 'money' }; }
     var rows, cols, t;
     if (id === 'summary') {
@@ -2574,6 +2856,16 @@
       if (ck === 'targetIdx') calcForm.manual = true;
       updateCalcOut(); return;
     }
+    if (t.hasAttribute('data-sim')) {
+      if (e.type !== 'change') return;
+      var sk = t.getAttribute('data-sim'), sv = t.type === 'checkbox' ? String(t.checked) : t.value, so = {}; so[sk] = sv;
+      simSave(so); softRerender(); return;
+    }
+    if (t.hasAttribute('data-sim-date')) {
+      if (e.type !== 'change' || !t.value) return;
+      var dd = simOpts().dates; dd[t.getAttribute('data-sim-date')] = t.value;
+      simSave({ simDates: JSON.stringify(dd) }); softRerender(); return;
+    }
     if (t.hasAttribute('data-rf')) { if (e.type === 'change') { repState[t.getAttribute('data-rf')] = t.value; softRerender(); } return; }
     if (t.hasAttribute('data-jf')) { jrFilter[t.getAttribute('data-jf')] = t.value; softRerender(); return; }
     if (t.hasAttribute('data-ct-search')) {
@@ -2679,6 +2971,25 @@
       case 'doc-unpick': docUpload.files.splice(+btn.getAttribute('data-i'), 1); renderPicked(); return;
       case 'del-doc': deleteDoc(btn.getAttribute('data-id')); return;
       case 'install': installApp(); return;
+      case 'nav-toggle': try { localStorage.setItem('hmp.navCollapsed', navCollapsed() ? '0' : '1'); } catch (e) {} applyNavCollapsed(); return;
+      case 'sim-toggle': {
+        var hid = simOpts().hidden, sid = btn.getAttribute('data-id'), at = hid.indexOf(sid);
+        if (at >= 0) hid.splice(at, 1); else { if (simScenarios().length - hid.length <= 1) { toast('צריך להשאיר לפחות תרחיש אחד מוצג', ''); return; } hid.push(sid); }
+        simSave({ simHidden: JSON.stringify(hid) }); softRerender(); return;
+      }
+      case 'sim-mode': simMatrixMode = btn.getAttribute('data-mode'); try { localStorage.setItem('hmp.simMatrix', simMatrixMode); } catch (e) {} softRerender(); return;
+      case 'sim-edit': openScenEditor(); return;
+      case 'sim-reset-dates': simSave({ simDates: '' }); softRerender(); return;
+      case 'scen-add': {
+        var tb = $('scen-body'); if (!tb) return;
+        var tmp = document.createElement('tbody'); tmp.innerHTML = scenRowHtml({ id: 'sc-' + uid(), name: '', y1: '', y2: '', y3: '', y4: '', y5: '' });
+        tb.appendChild(tmp.firstChild); tb.lastChild.querySelector('[data-n]').focus(); return;
+      }
+      case 'scen-del': { var tr = btn.closest('tr'); if (tr) tr.remove(); return; }
+      case 'scen-defaults':
+        if (!confirm('להחליף את כל התרחישים בתרחישי ברירת המחדל?')) return;
+        $('scen-body').innerHTML = defaultScenarios().map(scenRowHtml).join(''); return;
+      case 'scen-save': saveScenEditor(btn); return;
       case 'rep-tab': repState.id = btn.getAttribute('data-id'); rerender(); return;
       case 'rep-xlsx': try { exportReport(); } catch (e) { handleError(e); } return;
       case 'rep-print': window.print(); return;
@@ -2828,6 +3139,7 @@
     $('btn-login').addEventListener('click', function () {
       var btn = this; btn.disabled = true;
       var force = !!storeGet('forceSelect');
+      $('login-err').hidden = true;
       requestToken(force).then(function () { storeSet('forceSelect', null); return afterAuth(); }).catch(handleError).then(function () { btn.disabled = false; });
     });
     $('btn-create').addEventListener('click', function () {

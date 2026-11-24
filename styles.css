@@ -398,3 +398,43 @@ body.page{background:#fff}
 .login-links{margin-top:14px}
 .login-links a{color:var(--brand-2)}
 .page a.page-cta{color:#fff;text-decoration:none}
+/* סימולציה */
+.sim-opts{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:flex-end}
+.sim-opts .field{min-width:200px}
+.sim-check{display:inline-flex;align-items:center;gap:8px;min-height:44px;cursor:pointer}
+.sim-check input{width:20px;height:20px;accent-color:var(--brand)}
+.sim-chips{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 12px}
+.sim-chips .chip-btn{font-size:13px;padding:6px 12px;min-height:36px}
+.sim-bars{margin-top:14px;display:flex;flex-direction:column;gap:6px}
+.sim-bars .bar-row{grid-template-columns:150px minmax(0,1fr) 110px}
+.sim-bars .bar>div{background:var(--brand-2)}
+.sim-sel select{min-width:180px}
+.sim-date{font:inherit;font-size:13px;border:1px solid var(--line);border-radius:8px;padding:4px 6px;min-height:34px}
+.sim-date.changed{border-color:var(--accent);background:var(--accent-soft)}
+.print-only{display:none}
+.scen-tbl{min-width:620px}
+.scen-tbl input{width:100%;min-width:64px;font:inherit;border:1px solid var(--line);border-radius:8px;padding:6px 8px;min-height:38px}
+.scen-tbl td:first-child input{min-width:150px}
+.rep-tbl tr.on td{background:#F7FAFE}
+@media (max-width:760px){.sim-bars .bar-row{grid-template-columns:96px minmax(0,1fr) 84px}}
+@media print{.print-only{display:inline}.sim-date{display:none}}
+/* תפריט צד מצומצם (מחשב) */
+.brand{position:relative}
+.nav-toggle{margin-inline-start:auto;border:0;background:transparent;color:#C9D8EA;width:32px;height:32px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}
+.nav-toggle:hover{background:#1E4470;color:#fff}
+.sidebar-foot .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.sidebar{transition:width .18s ease}
+html.nav-collapsed .sidebar{width:72px;padding-inline:10px}
+html.nav-collapsed .brand{flex-direction:column;gap:12px;padding:4px 0 18px}
+html.nav-collapsed .brand>span{display:none}
+html.nav-collapsed .nav-toggle{margin:0;transform:scaleX(-1)}
+html.nav-collapsed .nav a{justify-content:center;padding:10px 0}
+html.nav-collapsed .nav a span,html.nav-collapsed .sidebar-foot .btn span,html.nav-collapsed .user{display:none}
+html.nav-collapsed .sidebar-foot .btn{padding:6px 0}
+@media (prefers-reduced-motion:reduce){.sidebar{transition:none}}
+/* אשף — סיכום */
+.wiz-sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+.sum-grp{background:var(--bg);border-radius:12px;padding:12px 14px}
+.sum-grp h3{font-size:14px;color:var(--brand);margin-bottom:6px}
+.wiz-nav .row{gap:8px;flex-wrap:wrap;justify-content:flex-end}
+#login-err{margin-top:12px;text-align:right}
