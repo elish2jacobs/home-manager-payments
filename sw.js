@@ -1,7 +1,7 @@
 // Home Manager Payments — Service Worker
 // אסטרטגיה: קודם רשת (תמיד הגרסה העדכנית), ואם אין חיבור — מהמטמון.
 // נתוני המשתמש (Google Drive/Sheets) לא עוברים כאן ולא נשמרים במטמון.
-var VERSION = '0.9.1';
+var VERSION = '0.9.2';
 var CACHE = 'hmp-' + VERSION;
 var SHELL = [
   './', './index.html', './styles.css?v=' + VERSION, './calc.js?v=' + VERSION, './app.js?v=' + VERSION,
@@ -32,13 +32,13 @@ self.addEventListener('fetch', function (e) {
     fetch(nav ? new Request(req.url, { cache: 'no-cache', credentials: 'same-origin' }) : req).then(function (res) {
       if (res && res.ok && res.type === 'basic') {
         var copy = res.clone();
-        caches.open(CACHE).then(function (c) { c.put(nav ? './index.html' : req, copy); });
+        caches.open(CACHE).then(function (c) { c.put(req, copy); });
       }
       return res;
     }).catch(function () {
       return caches.open(CACHE).then(function (c) {
-        return (nav ? c.match('./index.html') : c.match(req)).then(function (hit) {
-          return hit || c.match(req, { ignoreSearch: true }).then(function (h2) { return h2 || Response.error(); });
+        return c.match(req, { ignoreSearch: nav }).then(function (hit) {
+          return hit || (nav ? c.match('./index.html') : c.match(req, { ignoreSearch: true })).then(function (h2) { return h2 || Response.error(); });
         });
       });
     })

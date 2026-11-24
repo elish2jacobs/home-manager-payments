@@ -364,3 +364,37 @@ html.standalone body{overscroll-behavior-y:none}
   .rep-tbl tr{break-inside:avoid}
   .rep-tbl tfoot td{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 }
+/* דפי אתר: אודות / פרטיות */
+body.page{background:#fff}
+.page-wrap{max-width:860px;margin:0 auto;padding:0 20px}
+.page-hero{background:var(--brand);color:#fff;padding:56px 0 48px;text-align:center}
+.page-hero h1{font-size:34px;font-weight:800;margin:14px 0 10px}
+.page-hero .lead{font-size:18px;opacity:.92;max-width:620px;margin:0 auto 24px}
+.page-logo{border-radius:18px;box-shadow:0 6px 24px rgba(0,0,0,.25)}
+.page-cta{background:var(--accent);color:#fff;text-decoration:none;display:inline-flex;font-weight:700}
+.page-cta:hover{filter:brightness(1.05)}
+.page-hero-note{opacity:.8;margin-top:14px}
+.page-sec{padding:32px 0;border-bottom:1px solid var(--line)}
+.page-sec h2{font-size:22px;margin-bottom:14px}
+.page-sec p{margin:0 0 10px}
+.feat{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+.feat li{background:var(--bg);border-radius:var(--radius);padding:16px;display:flex;flex-direction:column;gap:4px}
+.feat b{color:var(--brand)}
+.feat span{color:var(--muted);font-size:14px}
+.how{margin:0 0 12px;padding-inline-start:22px;display:flex;flex-direction:column;gap:6px}
+.en{color:var(--muted)}
+.en h1,.en h2{color:var(--ink)}
+.page-foot{padding:28px 0 calc(28px + env(safe-area-inset-bottom));text-align:center;background:var(--bg);margin-top:24px}
+.page-foot a,.page a{color:var(--brand-2)}
+.page-top{border-bottom:1px solid var(--line);padding:12px 0}
+.page-brand{display:inline-flex;align-items:center;gap:10px;font-weight:700;color:var(--brand)!important;text-decoration:none}
+.page-brand img{border-radius:8px}
+.doc{padding-top:28px;padding-bottom:20px}
+.doc h1{font-size:28px;margin-bottom:6px}
+.doc h2{font-size:18px;margin:26px 0 8px}
+.doc p,.doc li{line-height:1.7}
+.doc ul{padding-inline-start:22px}
+.doc hr{border:0;border-top:1px solid var(--line);margin:36px 0}
+.login-links{margin-top:14px}
+.login-links a{color:var(--brand-2)}
+.page a.page-cta{color:#fff;text-decoration:none}

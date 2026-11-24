@@ -10,7 +10,7 @@
   var FOLDER_MIME = 'application/vnd.google-apps.folder';
   var SHEET_MIME = 'application/vnd.google-apps.spreadsheet';
   var SCHEMA_VERSION = 1;
-  var APP_VERSION = '0.9.1';
+  var APP_VERSION = '0.9.2';
 
   var ROOT_NAME = 'פרויקט הבית שלי';
   var DATA_NAME = 'נתוני הבית';
@@ -451,11 +451,30 @@
       show('screen-app');
       renderUser();
       setSync('', 'מחובר');
+      logEvent(goSetup ? 'signup' : 'login');
       if (goSetup || !isSetup()) { startWizard(); location.hash = '#/setup'; }
       route();
     });
   }
   function isSetup() { return state.s.setupComplete === 'true'; }
+  // ---------- יומן כניסות למנהל המערכת (אופציונלי: LOG_URL ב-config.js) ----------
+  // נשלח רק: סוג אירוע, מייל, שם, סוג מכשיר, גרסה ומסלול. נתוני הפרויקט עצמם לא נשלחים.
+  function logEvent(kind) {
+    try {
+      var url = CFG.LOG_URL;
+      if (!url || !/^https:\/\/script\.google(usercontent)?\.com\//.test(url) || !state.user || !state.user.email) return;
+      if (kind === 'login' && sessionStorage.getItem('hmp.logged') === state.user.email) return;
+      sessionStorage.setItem('hmp.logged', state.user.email);
+      var mobile = (window.matchMedia && matchMedia('(pointer:coarse)').matches) || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      var body = JSON.stringify({
+        event: kind, email: state.user.email, name: state.user.name || '',
+        device: (mobile ? 'נייד' : 'מחשב') + (isStandalone() ? ' · אפליקציה' : ''),
+        version: APP_VERSION, track: kind === 'signup' ? '' : String(state.s.track || '')
+      });
+      fetch(url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: body, keepalive: true }).catch(function () {});
+    } catch (e) { /* לעולם לא חוסם את האפליקציה */ }
+  }
+
 
   function handleError(e) {
     console.error('[HMP]', e);
@@ -501,12 +520,12 @@
     { id: 'contractor', title: 'קבלן ואבני דרך', short: 'אבני דרך', icon: 'stages', mobile: true },
     { id: 'expenses', title: 'הוצאות נוספות', short: 'הוצאות', icon: 'expenses', mobile: true },
     { id: 'payments', title: 'מרכז תשלומים', short: 'תשלומים', icon: 'pay', mobile: true },
-    { id: 'calculator', title: 'מחשבון מדד', icon: 'calc' },
-    { id: 'reports', title: 'דוחות וייצוא', icon: 'report' },
-    { id: 'journal', title: 'יומן תיעוד', icon: 'camera' },
-    { id: 'documents', title: 'מסמכים', icon: 'docs' },
-    { id: 'contacts', title: 'אנשי קשר', icon: 'contacts' },
     { id: 'tasks', title: 'משימות', icon: 'tasks' },
+    { id: 'journal', title: 'יומן תיעוד', icon: 'camera' },
+    { id: 'contacts', title: 'אנשי קשר', icon: 'contacts' },
+    { id: 'documents', title: 'מסמכים', icon: 'docs' },
+    { id: 'reports', title: 'דוחות וייצוא', icon: 'report' },
+    { id: 'calculator', title: 'מחשבון מדד', icon: 'calc' },
     { id: 'settings', title: 'הגדרות', icon: 'settings' },
     { id: 'more', title: 'עוד', icon: 'menu', mobile: true, mobileOnly: true }
   ];
@@ -1066,9 +1085,10 @@
     tasks: function () { return tasksView(); },
     category: function (r, param) { if (!isSetup()) return needSetupCard(); return categoryView(param); },
     more: function () {
+      var inst = '<li class="install-entry"' + (canInstall() ? '' : ' hidden') + '><a href="#" data-action="install">' + icon('download') + '<span>התקנת האפליקציה</span>' + icon('right', 16) + '</a></li>';
       return '<section class="card"><ul class="more-list">' + ROUTES.filter(function (r) { return !r.mobile; }).map(function (r) {
-        return '<li><a href="#/' + r.id + '">' + icon(r.icon) + '<span>' + r.title + '</span>' + icon('right', 16) + '</a></li>';
-      }).join('') + '<li class="install-entry"' + (canInstall() ? '' : ' hidden') + '><a href="#" data-action="install">' + icon('download') + '<span>התקנת האפליקציה</span>' + icon('right', 16) + '</a></li></ul></section>' +
+        return (r.id === 'settings' ? inst : '') + '<li><a href="#/' + r.id + '">' + icon(r.icon) + '<span>' + r.title + '</span>' + icon('right', 16) + '</a></li>';
+      }).join('') + '</ul></section>' +
         '<section class="card"><div class="muted small">' + esc(state.user && state.user.email) + '</div><div class="row"><button type="button" class="btn btn-secondary btn-sm" data-action="logout">התנתקות</button></div></section>';
     },
     payments: function () {
