@@ -338,3 +338,29 @@ th[aria-sort="ascending"] .th-btn,th[aria-sort="descending"] .th-btn{color:var(-
 #install-status .btn svg{margin-inline-end:6px}
 html.standalone body{overscroll-behavior-y:none}
 @media (max-width:760px){html.standalone .topbar{padding-top:calc(12px + env(safe-area-inset-top))}}
+/* דוחות */
+.rep-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.chip-btn{font:inherit;font-size:14px;border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:999px;padding:8px 14px;min-height:40px;cursor:pointer}
+.chip-btn:hover{background:var(--bg)}
+.chip-btn.on{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:700}
+.rep-meta{display:flex;flex-wrap:wrap;gap:4px 16px;margin:6px 0 12px}
+.rep-filters{margin-bottom:12px}
+.rep-sub{margin:20px 0 6px;font-size:16px}
+.rep-tbl{min-width:0}
+.rep-tbl th.n,.rep-tbl td.n{text-align:left}
+.rep-tbl td{white-space:nowrap}
+.rep-tbl tr.grp td{border-top:2px solid var(--line)}
+.rep-tbl tfoot td{font-weight:700;border-top:2px solid var(--brand);border-bottom:0;background:var(--brand-soft)}
+#rep-card .btn svg,.card .btn-sm svg{margin-inline-end:6px}
+@media (max-width:760px){.rep-tbl{font-size:13px}.rep-tbl td,.rep-tbl th{padding:6px}}
+@media print{
+  @page{size:A4;margin:12mm}
+  body{background:#fff;font-size:11pt}
+  .sidebar,.topbar,.bottomnav,.no-print,#toast,#reconnect,#update-bar,dialog{display:none!important}
+  .shell,.content,.view{display:block!important;padding:0!important;margin:0!important;width:auto!important}
+  .card{box-shadow:none!important;border:0!important;padding:0!important;margin:0 0 8mm!important;break-inside:auto}
+  .table-wrap{overflow:visible!important}
+  .rep-tbl{font-size:9.5pt;width:100%}
+  .rep-tbl tr{break-inside:avoid}
+  .rep-tbl tfoot td{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}

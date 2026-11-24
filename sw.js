@@ -1,7 +1,7 @@
 // Home Manager Payments — Service Worker
 // אסטרטגיה: קודם רשת (תמיד הגרסה העדכנית), ואם אין חיבור — מהמטמון.
 // נתוני המשתמש (Google Drive/Sheets) לא עוברים כאן ולא נשמרים במטמון.
-var VERSION = '0.9.0';
+var VERSION = '0.9.1';
 var CACHE = 'hmp-' + VERSION;
 var SHELL = [
   './', './index.html', './styles.css?v=' + VERSION, './calc.js?v=' + VERSION, './app.js?v=' + VERSION,

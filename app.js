@@ -10,7 +10,7 @@
   var FOLDER_MIME = 'application/vnd.google-apps.folder';
   var SHEET_MIME = 'application/vnd.google-apps.spreadsheet';
   var SCHEMA_VERSION = 1;
-  var APP_VERSION = '0.9.0';
+  var APP_VERSION = '0.9.1';
 
   var ROOT_NAME = 'פרויקט הבית שלי';
   var DATA_NAME = 'נתוני הבית';
@@ -490,6 +490,7 @@
     mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
     tasks: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 3 3 5-6"/>',
     x: '<path d="M6 6l12 12M18 6 6 18"/>',
+    report: '<path d="M5 3h14v18H5z"/><path d="M9 16v-3M12 16V9M15 16v-5"/>',
     download: '<path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/>',
     grid: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
     list: '<path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>',
@@ -501,6 +502,7 @@
     { id: 'expenses', title: 'הוצאות נוספות', short: 'הוצאות', icon: 'expenses', mobile: true },
     { id: 'payments', title: 'מרכז תשלומים', short: 'תשלומים', icon: 'pay', mobile: true },
     { id: 'calculator', title: 'מחשבון מדד', icon: 'calc' },
+    { id: 'reports', title: 'דוחות וייצוא', icon: 'report' },
     { id: 'journal', title: 'יומן תיעוד', icon: 'camera' },
     { id: 'documents', title: 'מסמכים', icon: 'docs' },
     { id: 'contacts', title: 'אנשי קשר', icon: 'contacts' },
@@ -1058,6 +1060,7 @@
     },
     expenses: function () { if (!isSetup()) return needSetupCard(); return expensesView(); },
     documents: function () { return documentsView(); },
+    reports: function () { return reportsView(); },
     journal: function () { return journalView(); },
     contacts: function () { return contactsView(); },
     tasks: function () { return tasksView(); },
@@ -1703,6 +1706,314 @@
     }).join('') + '</tbody></table></div>';
   }
 
+  // ---------- קובץ Excel (xlsx) — כתיבה ללא ספריות ----------
+  var XLSX = (function () {
+    var CRC = (function () { var t = [], c, n, k; for (n = 0; n < 256; n++) { c = n; for (k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+    function crc32(b) { var c = 0xFFFFFFFF; for (var i = 0; i < b.length; i++) c = CRC[(c ^ b[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+    function zip(files) { // [{name, data:Uint8Array}] — שיטת STORE
+      var enc = new TextEncoder(), parts = [], central = [], off = 0;
+      function u16(n) { return [n & 255, (n >>> 8) & 255]; }
+      function u32(n) { return [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255]; }
+      files.forEach(function (f) {
+        var name = enc.encode(f.name), crc = crc32(f.data), sz = f.data.length;
+        var common = [].concat(u16(20), u16(0x0800), u16(0), u16(0), u16(0x21), u32(crc), u32(sz), u32(sz), u16(name.length), u16(0));
+        var local = new Uint8Array([].concat(u32(0x04034b50), common));
+        parts.push(local, name, f.data);
+        central.push(new Uint8Array([].concat(u32(0x02014b50), u16(20), common, u16(0), u16(0), u16(0), u32(0), u32(off))), name);
+        off += local.length + name.length + sz;
+      });
+      var cdSize = central.reduce(function (a, p) { return a + p.length; }, 0);
+      var end = new Uint8Array([].concat(u32(0x06054b50), u16(0), u16(0), u16(files.length), u16(files.length), u32(cdSize), u32(off), u16(0)));
+      return new Blob(parts.concat(central, [end]), { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    }
+    function x(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, ''); }
+    function colName(i) { var s = ''; i++; while (i > 0) { var m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; }
+    function serial(iso) { var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || ''); return m ? (Date.UTC(+m[1], +m[2] - 1, +m[3]) - Date.UTC(1899, 11, 30)) / 864e5 : null; }
+    // סגנונות: 0 רגיל · 1 כותרת עמודה · 2 כסף · 3 תאריך · 4 אחוז · 5 כסף מודגש · 6 טקסט מודגש · 7 כותרת גיליון · 8 מספר עשרוני
+    var STYLES = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+      '<numFmts count="3"><numFmt numFmtId="164" formatCode="#,##0"/><numFmt numFmtId="165" formatCode="dd/mm/yyyy"/><numFmt numFmtId="166" formatCode="0.##&quot;%&quot;"/></numFmts>' +
+      '<fonts count="3"><font><sz val="11"/><name val="Arial"/></font><font><b/><sz val="11"/><name val="Arial"/></font><font><b/><sz val="14"/><color rgb="FF15365C"/><name val="Arial"/></font></fonts>' +
+      '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE8EEF6"/></patternFill></fill></fills>' +
+      '<borders count="2"><border/><border><top style="thin"><color rgb="FF15365C"/></top></border></borders>' +
+      '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="9">' +
+      '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
+      '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/>' +
+      '<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>' +
+      '<xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>' +
+      '<xf numFmtId="166" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>' +
+      '<xf numFmtId="164" fontId="1" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1"/>' +
+      '<xf numFmtId="0" fontId="1" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1"/>' +
+      '<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/>' +
+      '<xf numFmtId="2" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>' +
+      '</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
+    function cell(ref, v, type, bold) {
+      if (v == null || v === '') return '';
+      if (type === 'money' || type === 'num' || type === 'pct' || type === 'dec') {
+        var n = typeof v === 'number' ? v : C.num(v);
+        if (!isFinite(n)) return '';
+        var st = type === 'money' ? (bold ? 5 : 2) : (type === 'pct' ? 4 : (type === 'dec' ? 8 : 0));
+        return '<c r="' + ref + '"' + (st ? ' s="' + st + '"' : '') + '><v>' + n + '</v></c>';
+      }
+      if (type === 'date') { var d = serial(v); if (d != null) return '<c r="' + ref + '" s="3"><v>' + d + '</v></c>'; }
+      return '<c r="' + ref + '" t="inlineStr"' + (bold ? ' s="' + bold + '"' : '') + '><is><t xml:space="preserve">' + x(v) + '</t></is></c>';
+    }
+    // sheet: {name, title?, meta?:[[k,v]], cols:[{label,type,w}], rows:[[...]], total?:[...]}
+    function sheetXml(sh) {
+      var r = 0, out = [];
+      function row(cells) { r++; out.push('<row r="' + r + '">' + cells.join('') + '</row>'); }
+      if (sh.title) { row([cell('A' + (r + 1), sh.title, 'text', 7)]); }
+      (sh.meta || []).forEach(function (m) { row([cell('A' + (r + 1), m[0], 'text', 6), cell('B' + (r + 1), m[1], m[2] || 'text')]); });
+      if (sh.title || (sh.meta && sh.meta.length)) r++;
+      var head = r + 1;
+      row(sh.cols.map(function (c, i) { return cell(colName(i) + (r + 1), c.label, 'text', 1); }));
+      sh.rows.forEach(function (vals) { row(vals.map(function (v, i) { return cell(colName(i) + (r + 1), v, sh.cols[i].type); })); });
+      if (sh.total) row(sh.total.map(function (v, i) { return cell(colName(i) + (r + 1), v, sh.cols[i].type === 'money' ? 'money' : 'text', sh.cols[i].type === 'money' ? true : 6); }));
+      var cols = '<cols>' + sh.cols.map(function (c, i) {
+        var w = c.w || (c.type === 'money' ? 14 : c.type === 'date' ? 12 : Math.min(40, Math.max(10, String(c.label).length + 4)));
+        if (i === 0 && sh.meta && sh.meta.length) w = Math.max(w, 26);
+        return '<col min="' + (i + 1) + '" max="' + (i + 1) + '" width="' + w + '" customWidth="1"/>';
+      }).join('') + '</cols>';
+      return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+        '<sheetViews><sheetView rightToLeft="1" workbookViewId="0"><pane ySplit="' + head + '" topLeftCell="A' + (head + 1) + '" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>' +
+        cols + '<sheetData>' + out.join('') + '</sheetData></worksheet>';
+    }
+    function safeName(n, used) {
+      var s = String(n || 'גיליון').replace(/[\[\]:*?\/\\]/g, ' ').slice(0, 31).trim() || 'גיליון', b = s, k = 2;
+      while (used[s]) { s = b.slice(0, 28) + ' ' + k++; }
+      used[s] = 1; return s;
+    }
+    function build(sheets) {
+      var enc = new TextEncoder(), used = {}, names = sheets.map(function (s) { return safeName(s.name, used); });
+      var files = [
+        { name: '[Content_Types].xml', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' +
+          sheets.map(function (s, i) { return '<Override PartName="/xl/worksheets/sheet' + (i + 1) + '.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'; }).join('') + '</Types>' },
+        { name: '_rels/.rels', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>' },
+        { name: 'xl/workbook.xml', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView/></bookViews><sheets>' +
+          names.map(function (n, i) { return '<sheet name="' + x(n) + '" sheetId="' + (i + 1) + '" r:id="rId' + (i + 1) + '"/>'; }).join('') + '</sheets></workbook>' },
+        { name: 'xl/_rels/workbook.xml.rels', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+          sheets.map(function (s, i) { return '<Relationship Id="rId' + (i + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet' + (i + 1) + '.xml"/>'; }).join('') +
+          '<Relationship Id="rId' + (sheets.length + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>' },
+        { name: 'xl/styles.xml', data: STYLES }
+      ].concat(sheets.map(function (s, i) { return { name: 'xl/worksheets/sheet' + (i + 1) + '.xml', data: sheetXml(s) }; }));
+      return zip(files.map(function (f) { return { name: f.name, data: enc.encode(f.data) }; }));
+    }
+    return { build: build };
+  })();
+  function downloadBlob(blob, filename) {
+    var url = URL.createObjectURL(blob), a = document.createElement('a');
+    a.href = url; a.download = filename; a.rel = 'noopener';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 30000);
+  }
+  function fileStamp() { return todayIso(); }
+
+  // ---------- דוחות ----------
+  var REPORTS = [
+    { id: 'summary', title: 'סיכום פרויקט' },
+    { id: 'contractor', title: 'לוח תשלומי קבלן' },
+    { id: 'expenses', title: 'הוצאות לפי קטגוריה' },
+    { id: 'payments', title: 'כל התשלומים' },
+    { id: 'cashflow', title: 'תזרים צפוי' }
+  ];
+  var repState = { id: 'summary', from: '', to: '', type: '', funding: '' };
+  function V(n) { return C.round2(vatExcl() ? C.num(n) / (1 + vatRate()) : C.num(n)); }
+  function vatLabel() { return vatExcl() ? 'הסכומים ללא מע״מ' : 'הסכומים כולל מע״מ'; }
+  function repMeta() {
+    var s = state.s, m = [];
+    if (s.projectName) m.push(['פרויקט', s.projectName]);
+    if (s.contractor) m.push(['קבלן', s.contractor]);
+    if (s.address) m.push(['כתובת', s.address + (s.aptNo ? ', דירה ' + s.aptNo : '')]);
+    m.push(['תאריך הפקה', todayIso(), 'date']);
+    m.push(['הערה', vatLabel()]);
+    return m;
+  }
+  function sum(rows, i) { return C.round2(rows.reduce(function (a, r) { return a + (C.num(r[i]) || 0); }, 0)); }
+  function payTarget(p) {
+    if (p.type === 'expense') { var e = expById(p.expenseId), c = e ? catById(e.categoryId) : null; return (c ? c.name + ' — ' : '') + (e ? e.name : '(הוצאה שנמחקה)'); }
+    return p.stageId ? stageName(p.stageId) : 'קבלן';
+  }
+  function fundingList() {
+    var set = {}; state.payments.forEach(function (p) { if (p.fundingSource) set[p.fundingSource] = 1; });
+    return Object.keys(set).sort(heCmp);
+  }
+  function buildReport(id) {
+    function mc(label) { return { label: label, type: 'money' }; }
+    var rows, cols, t;
+    if (id === 'summary') {
+      var lr = ledger(), s = state.s, t1 = String(s.track) === '1';
+      var commit = lr.reduce(function (a, r) { return a + r.st.forecast; }, 0);
+      var paid = lr.reduce(function (a, r) { return a + r.st.paid; }, 0);
+      var adj = lr.reduce(function (a, r) { return a + r.st.adj; }, 0);
+      var est = lr.reduce(function (a, r) { return a + r.est; }, 0);
+      var et = expTotals();
+      var expLeft = expRows().reduce(function (a, r) { return a + (r.x.status === 'cancelled' ? 0 : Math.max(0, r.x.value - r.x.paid)); }, 0);
+      rows = [
+        ['קבלן', 'מחיר החוזה' + (String(s.track) !== '1' ? ' (כולל תוספת חוזית)' : ''), V(C.effectivePrice(s))]
+      ];
+      if (t1) { rows.push(['קבלן', 'הצמדה לפי דרישות תשלום', V(adj)]); rows.push(['קבלן', 'הצמדה נכון להיום (לתשלומים עתידיים)', V(est)]); }
+      rows.push(['קבלן', 'התחייבות לקבלן כולל הצמדה', V(commit)], ['קבלן', 'שולם לקבלן', V(paid)], ['קבלן', 'יתרה לקבלן', V(commit - paid)]);
+      rows.push(['הוצאות נוספות', 'תקציב', V(et.budget)], ['הוצאות נוספות', 'צפי הוצאות', V(et.value)], ['הוצאות נוספות', 'התחייבויות', V(et.commit)], ['הוצאות נוספות', 'שולם', V(et.paid)], ['הוצאות נוספות', 'יתרה לתשלום (צפי פחות שולם)', V(expLeft)]);
+      rows.push(['סה״כ', 'עלות כוללת צפויה', V(commit + et.value)], ['סה״כ', 'שולם בסה״כ', V(paid + et.paid)], ['סה״כ', 'יתרה כוללת לתשלום', V(commit - paid + expLeft)]);
+      return { title: 'סיכום פרויקט', tables: [{ name: 'סיכום', cols: [{ label: 'תחום', type: 'text', w: 16 }, { label: 'נושא', type: 'text', w: 40 }, mc('סכום')], rows: rows, groupCol: 0 }],
+        hint: t1 ? '"הצמדה נכון להיום" — לתשלומים שעוד לא התקבלה עליהם דרישה, ' + estBasisLabel() + '.' : '' };
+    }
+    if (id === 'contractor') {
+      var l2 = ledger();
+      cols = [{ label: '#', type: 'num', w: 5 }, { label: 'אבן דרך', type: 'text', w: 26 }, { label: '%', type: 'pct', w: 7 }, { label: 'תאריך צפוי', type: 'date' }, mc('בסיס'), mc('הצמדה'), mc('סכום צפוי'), mc('שולם'), mc('יתרה'), { label: 'סטטוס', type: 'text', w: 14 }];
+      rows = l2.map(function (r, i) {
+        return [i + 1, r.name, C.num(r.pct), r.date || '', V(r.base), V(r.st.adj + r.est), V(r.st.forecast), V(r.st.paid), V(Math.max(0, r.st.forecast - r.st.paid)), C.STATUS_LABEL[r.st.status] + (r.st.overdue ? ' · באיחור' : '')];
+      });
+      t = ['', 'סה״כ', '', '', sum(rows, 4), sum(rows, 5), sum(rows, 6), sum(rows, 7), sum(rows, 8), ''];
+      return { title: 'לוח תשלומי קבלן', tables: [{ name: 'אבני דרך', cols: cols, rows: rows, total: t }],
+        hint: String(state.s.track) === '1' ? 'הצמדה: בפועל לפי דרישות התשלום, ולשאר — ' + estBasisLabel() + '.' : '' };
+    }
+    if (id === 'expenses') {
+      cols = [{ label: 'קטגוריה', type: 'text', w: 22 }, mc('תקציב'), mc('צפי'), mc('התחייבות'), mc('שולם'), mc('יתרה לתשלום'), mc('יתרת תקציב')];
+      rows = state.categories.filter(function (c) { var a = catAgg(c); return a.budget || a.count; }).map(function (c) {
+        var a = catAgg(c), left = expRows(c.id).reduce(function (s2, r) { return s2 + (r.x.status === 'cancelled' ? 0 : Math.max(0, r.x.value - r.x.paid)); }, 0);
+        return [c.name, V(a.budget), V(a.value), V(a.commit), V(a.paid), V(left), a.budget ? V(a.left) : ''];
+      });
+      t = ['סה״כ', sum(rows, 1), sum(rows, 2), sum(rows, 3), sum(rows, 4), sum(rows, 5), sum(rows, 6)];
+      var dcols = [{ label: 'קטגוריה', type: 'text', w: 18 }, { label: 'פריט', type: 'text', w: 24 }, { label: 'ספק', type: 'text', w: 18 }, { label: 'סטטוס', type: 'text', w: 12 }, mc('הערכה'), mc('התחייבות'), mc('שולם'), mc('יתרה')];
+      var order = {}; state.categories.forEach(function (c, i) { order[c.id] = i; });
+      var drows = expRows().slice().sort(function (a, b) { return (order[a.e.categoryId] || 0) - (order[b.e.categoryId] || 0); }).map(function (r) {
+        var c = catById(r.e.categoryId);
+        return [c ? c.name : '', r.e.name, r.e.supplier || '', C.EXP_STATUS[r.x.status], V(r.x.est), r.x.commit ? V(r.x.commit) : '', V(r.x.paid), r.x.status === 'cancelled' ? 0 : V(Math.max(0, r.x.value - r.x.paid))];
+      });
+      return { title: 'הוצאות לפי קטגוריה', tables: [
+        { name: 'לפי קטגוריה', cols: cols, rows: rows, total: t },
+        { name: 'פירוט הוצאות', title: 'פירוט הוצאות', cols: dcols, rows: drows, total: ['סה״כ', '', '', '', sum(drows, 4), sum(drows, 5), sum(drows, 6), sum(drows, 7)] }
+      ], hint: '"יתרה לתשלום" = הצפי (התחייבות, ואם אין — הערכה) פחות מה ששולם.' };
+    }
+    if (id === 'payments') {
+      var list = state.payments.filter(function (p) {
+        if (repState.from && p.date < repState.from) return false;
+        if (repState.to && p.date > repState.to) return false;
+        if (repState.type && p.type !== repState.type) return false;
+        if (repState.funding && (p.fundingSource || '') !== (repState.funding === '__none' ? '' : repState.funding)) return false;
+        return true;
+      }).sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+      cols = [{ label: 'תאריך', type: 'date' }, { label: 'סוג', type: 'text', w: 10 }, { label: 'עבור', type: 'text', w: 30 }, mc('סכום'), { label: 'אמצעי תשלום', type: 'text', w: 14 }, { label: 'מקור מימון', type: 'text', w: 14 }, { label: 'אסמכתא', type: 'text', w: 12 }, { label: 'הערות', type: 'text', w: 30 }];
+      rows = list.map(function (p) { return [p.date, p.type === 'expense' ? 'הוצאה' : 'קבלן', payTarget(p), V(p.amount), methodLabel(p.method), p.fundingSource || '', p.reference || '', p.notes || '']; });
+      var by = {}; list.forEach(function (p) { var k = p.fundingSource || 'לא צוין'; by[k] = (by[k] || 0) + C.num(p.amount); });
+      var frows = Object.keys(by).sort(heCmp).map(function (k) { return [k, V(by[k])]; });
+      return { title: 'כל התשלומים', filters: true, tables: [
+        { name: 'תשלומים', cols: cols, rows: rows, total: ['סה״כ', '', '', sum(rows, 3), '', '', '', ''] },
+        { name: 'לפי מקור מימון', title: 'לפי מקור מימון', cols: [{ label: 'מקור מימון', type: 'text', w: 20 }, mc('סכום')], rows: frows, total: ['סה״כ', sum(frows, 1)] }
+      ] };
+    }
+    if (id === 'cashflow') {
+      var cur = todayIso().slice(0, 7), months = {};
+      function add(ym, k, v) { if (!(v > 0.5)) return; ym = !ym || ym < cur ? cur : ym; months[ym] = months[ym] || { c: 0, e: 0 }; months[ym][k] += v; }
+      ledger().forEach(function (r) { add((r.date || '').slice(0, 7), 'c', r.st.forecast - r.st.paid); });
+      var undated = 0;
+      expRows().forEach(function (r) {
+        if (r.x.status === 'cancelled') return;
+        var left = r.x.value - r.x.paid, d = (r.e.endDate || r.e.startDate || '').slice(0, 7);
+        if (!d) { undated += Math.max(0, left); return; }
+        add(d, 'e', left);
+      });
+      var acc = 0;
+      rows = Object.keys(months).sort().map(function (ym) {
+        var m = months[ym], tot = m.c + m.e; acc += tot;
+        return [C.monthName(+ym.slice(0, 4), +ym.slice(5, 7)), V(m.c), V(m.e), V(tot), V(acc)];
+      });
+      if (undated > 0.5) { acc += undated; rows.push(['ללא תאריך', '', V(undated), V(undated), V(acc)]); }
+      cols = [{ label: 'חודש', type: 'text', w: 16 }, mc('קבלן'), mc('הוצאות נוספות'), mc('סה״כ לחודש'), mc('מצטבר')];
+      return { title: 'תזרים צפוי', tables: [{ name: 'תזרים', cols: cols, rows: rows, total: ['סה״כ', sum(rows, 1), sum(rows, 2), sum(rows, 3), ''] }],
+        hint: 'מה שנשאר לשלם, לפי חודשים. קבלן — לפי התאריך הצפוי של אבן הדרך (כולל הצמדה נכון להיום). הוצאות — לפי תאריך הסיום/ההתחלה של ההוצאה. תשלומים שמועדם עבר ועוד לא שולמו מופיעים בחודש הנוכחי.' };
+    }
+    return null;
+  }
+  function repCell(v, type) {
+    if (v === '' || v == null) return '';
+    if (type === 'money') return '<span class="num nowrap">' + C.fmtMoney(v) + '</span>';
+    if (type === 'date') return '<span class="num nowrap">' + C.fmtDate(v) + '</span>';
+    if (type === 'pct') return '<span class="num">' + C.fmtPct(v) + '</span>';
+    return esc(v);
+  }
+  function repTableHtml(tb) {
+    var right = function (c) { return c.type === 'money' || c.type === 'pct' || c.type === 'num' ? ' class="n"' : ''; };
+    var prev = null;
+    return (tb.title ? '<h3 class="rep-sub">' + esc(tb.title) + '</h3>' : '') +
+      '<div class="table-wrap"><table class="tbl rep-tbl"><thead><tr>' + tb.cols.map(function (c) { return '<th' + right(c) + '>' + esc(c.label) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+      (tb.rows.length ? tb.rows.map(function (r) {
+        var g = tb.groupCol != null ? r[tb.groupCol] : null, newGrp = g != null && g !== prev;
+        var cls = newGrp && prev !== null ? ' class="grp"' : '';
+        prev = g;
+        return '<tr' + cls + '>' + r.map(function (v, i) { return '<td' + right(tb.cols[i]) + '>' + (i === tb.groupCol && !newGrp ? '' : (i === tb.groupCol ? '<b>' + esc(v) + '</b>' : repCell(v, tb.cols[i].type))) + '</td>'; }).join('') + '</tr>';
+      }).join('') : '<tr><td colspan="' + tb.cols.length + '" class="muted">אין נתונים.</td></tr>') +
+      '</tbody>' + (tb.total && tb.rows.length ? '<tfoot><tr>' + tb.total.map(function (v, i) { return '<td' + right(tb.cols[i]) + '>' + repCell(v, tb.cols[i].type === 'money' ? 'money' : 'text') + '</td>'; }).join('') + '</tr></tfoot>' : '') +
+      '</table></div>';
+  }
+  function reportsView() {
+    if (!isSetup()) return needSetupCard();
+    var rep = buildReport(repState.id);
+    var tabs = '<div class="rep-tabs no-print" role="tablist">' + REPORTS.map(function (r) {
+      return '<button type="button" role="tab" class="chip-btn' + (r.id === repState.id ? ' on' : '') + '" aria-selected="' + (r.id === repState.id) + '" data-action="rep-tab" data-id="' + r.id + '">' + esc(r.title) + '</button>';
+    }).join('') + '</div>';
+    var filters = '';
+    if (rep.filters) {
+      var fl = fundingList();
+      filters = '<div class="fields rep-filters no-print">' +
+        '<div class="field"><label for="rf-from">מתאריך</label><input type="date" id="rf-from" data-rf="from" value="' + esc(repState.from) + '"></div>' +
+        '<div class="field"><label for="rf-to">עד תאריך</label><input type="date" id="rf-to" data-rf="to" value="' + esc(repState.to) + '"></div>' +
+        '<div class="field"><label for="rf-type">סוג</label><select id="rf-type" data-rf="type">' + [['', 'הכול'], ['contractor', 'קבלן'], ['expense', 'הוצאות נוספות']].map(function (o) { return '<option value="' + o[0] + '"' + (repState.type === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></div>' +
+        '<div class="field"><label for="rf-funding">מקור מימון</label><select id="rf-funding" data-rf="funding"><option value="">הכול</option>' + fl.map(function (f) { return '<option' + (repState.funding === f ? ' selected' : '') + '>' + esc(f) + '</option>'; }).join('') + '<option value="__none"' + (repState.funding === '__none' ? ' selected' : '') + '>לא צוין</option></select></div>' +
+        '</div>';
+    }
+    var meta = repMeta().filter(function (m) { return m[0] !== 'הערה'; }).map(function (m) { return '<span>' + esc(m[0]) + ': <b>' + (m[2] === 'date' ? C.fmtDate(m[1]) : esc(m[1])) + '</b></span>'; }).join('');
+    return '<section class="card no-print"><div class="row between"><div><h2>דוחות</h2><p class="hint">בחר דוח. אפשר לייצא אותו לאקסל או להדפיס / לשמור כ-PDF.</p></div>' +
+      '<button type="button" class="btn btn-secondary btn-sm" data-action="export-all">' + icon('download', 16) + 'ייצוא כל הנתונים</button></div>' + tabs + '</section>' +
+      '<section class="card rep-card" id="rep-card"><div class="row between"><h2>' + esc(rep.title) + '</h2>' +
+      '<div class="row no-print"><button type="button" class="btn btn-primary btn-sm" data-action="rep-xlsx">' + icon('download', 16) + 'ייצוא לאקסל</button>' +
+      '<button type="button" class="btn btn-secondary btn-sm" data-action="rep-print">הדפסה / PDF</button></div></div>' +
+      '<div class="rep-meta small muted">' + meta + '<span>' + vatLabel() + '</span></div>' + filters +
+      rep.tables.map(repTableHtml).join('') + (rep.hint ? '<p class="hint">' + esc(rep.hint) + '</p>' : '') + '</section>';
+  }
+  function exportReport() {
+    var rep = buildReport(repState.id);
+    var sheets = rep.tables.map(function (tb, i) {
+      return { name: tb.name, title: i === 0 ? rep.title : tb.title, meta: i === 0 ? repMeta() : null, cols: tb.cols, rows: tb.rows, total: tb.rows.length ? tb.total : null };
+    });
+    downloadBlob(XLSX.build(sheets), 'HMP-' + rep.title.replace(/\s+/g, '-') + '-' + fileStamp() + '.xlsx');
+    toast('הקובץ ירד למכשיר', 'ok');
+  }
+  // ייצוא כל הנתונים הגולמיים — גיליון לכל סוג נתון
+  var EXPORT_TABLES = [
+    { key: 'stages', name: 'אבני דרך', cols: [['order', 'סדר', 'num'], ['name', 'שם'], ['pct', 'אחוז', 'dec'], ['month', 'חודש מהחתימה', 'num'], ['plannedDate', 'תאריך מתוכנן', 'date'], ['indexExempt', 'פטור ממדד'], ['linkedPct', 'אחוז צמוד', 'dec'], ['notes', 'הערות']] },
+    { key: 'requests', name: 'דרישות תשלום', cols: [['stageId', 'אבן דרך', 'stage'], ['number', 'מספר'], ['receivedDate', 'תאריך קבלה', 'date'], ['dueDate', 'לתשלום עד', 'date'], ['baseAmount', 'בסיס', 'money'], ['indexValue', 'מדד', 'dec'], ['indexMonth', 'חודש מדד'], ['indexAdj', 'הצמדה', 'money'], ['finalAmount', 'סכום סופי', 'money'], ['contractorAmount', 'סכום לפי הקבלן', 'money'], ['notes', 'הערות']] },
+    { key: 'payments', name: 'תשלומים', cols: [['date', 'תאריך', 'date'], ['type', 'סוג', 'ptype'], ['stageId', 'אבן דרך', 'stage'], ['expenseId', 'הוצאה', 'exp'], ['amount', 'סכום', 'money'], ['method', 'אמצעי', 'method'], ['fundingSource', 'מקור מימון'], ['reference', 'אסמכתא'], ['notes', 'הערות']] },
+    { key: 'categories', name: 'קטגוריות', cols: [['order', 'סדר', 'num'], ['name', 'שם'], ['budget', 'תקציב', 'money']] },
+    { key: 'expenses', name: 'הוצאות', cols: [['categoryId', 'קטגוריה', 'cat'], ['name', 'פריט'], ['supplier', 'ספק'], ['estimate', 'הערכה', 'money'], ['commitment', 'התחייבות', 'money'], ['status', 'סטטוס', 'estatus'], ['startDate', 'התחלה', 'date'], ['endDate', 'סיום', 'date'], ['notes', 'הערות']] },
+    { key: 'contacts', name: 'אנשי קשר', cols: [['domain', 'תחום'], ['company', 'חברה'], ['role', 'תפקיד'], ['name', 'שם'], ['phone', 'טלפון'], ['phone2', 'טלפון נוסף'], ['email', 'מייל'], ['notes', 'הערות']] },
+    { key: 'journal', name: 'יומן', cols: [['date', 'תאריך', 'date'], ['title', 'נושא'], ['area', 'תחום'], ['links', 'שיוך', 'link'], ['notes', 'הערות']] },
+    { key: 'tasks', name: 'משימות', cols: [['title', 'משימה'], ['area', 'תחום'], ['dueDate', 'יעד', 'date'], ['owner', 'אחראי'], ['priority', 'עדיפות'], ['status', 'סטטוס'], ['notes', 'הערות']] },
+    { key: 'docs', name: 'מסמכים', cols: [['name', 'שם'], ['type', 'סוג', 'doctype'], ['links', 'שיוך', 'link'], ['description', 'תיאור'], ['uploadedAt', 'הועלה', 'date'], ['webViewLink', 'קישור']] }
+  ];
+  function exportAll() {
+    var conv = {
+      stage: function (v) { return v ? stageName(v) : ''; },
+      exp: function (v) { var e = v && expById(v); return e ? e.name : ''; },
+      cat: function (v) { var c = v && catById(v); return c ? c.name : ''; },
+      ptype: function (v) { return v === 'expense' ? 'הוצאה' : 'קבלן'; },
+      method: methodLabel,
+      estatus: function (v) { return C.EXP_STATUS[v] || v || ''; },
+      link: function (v) { return v ? String(v).split(',').filter(Boolean).map(linkLabel).join(', ') : ''; },
+      doctype: function (v) { return docTypeLabel(v); }
+    };
+    var settings = Object.keys(state.s).sort().map(function (k) { return [k, state.s[k]]; });
+    var sheets = [{ name: 'הגדרות', title: 'Home Manager Payments — כל הנתונים', meta: repMeta().filter(function (m) { return m[0] !== 'הערה'; }).concat([['הערה', 'הסכומים כפי שהוזנו (כולל מע״מ)']]),
+      cols: [{ label: 'מפתח', type: 'text', w: 24 }, { label: 'ערך', type: 'text', w: 40 }], rows: settings }];
+    EXPORT_TABLES.forEach(function (t) {
+      var list = state[t.key] || [];
+      sheets.push({ name: t.name, cols: t.cols.map(function (c) { var ty = c[2]; return { label: c[1], type: ty === 'money' || ty === 'date' || ty === 'num' || ty === 'dec' ? ty : 'text' }; }),
+        rows: list.map(function (r) { return t.cols.map(function (c) { var v = r[c[0]]; return conv[c[2]] ? conv[c[2]](v) : (v == null ? '' : v); }); }) });
+    });
+    downloadBlob(XLSX.build(sheets), 'HMP-כל-הנתונים-' + fileStamp() + '.xlsx');
+    toast('הקובץ ירד למכשיר', 'ok');
+  }
+
   // ---------- יומן תיעוד ----------
   var JOURNAL_AREAS = ['ביקור באתר', 'שלד', 'חשמל', 'אינסטלציה', 'ריצוף', 'מטבח', 'אמבטיה', 'חלונות ואלומיניום', 'פיתוח חוץ', 'פגישה', 'אחר'];
   function loadJournal() { return readRows('Journal').then(function (r) { state.journal = r.filter(function (x) { return x.id; }); return state.journal; }); }
@@ -2243,6 +2554,7 @@
       if (ck === 'targetIdx') calcForm.manual = true;
       updateCalcOut(); return;
     }
+    if (t.hasAttribute('data-rf')) { if (e.type === 'change') { repState[t.getAttribute('data-rf')] = t.value; softRerender(); } return; }
     if (t.hasAttribute('data-jf')) { jrFilter[t.getAttribute('data-jf')] = t.value; softRerender(); return; }
     if (t.hasAttribute('data-ct-search')) {
       ctSearch = t.value;
@@ -2347,6 +2659,10 @@
       case 'doc-unpick': docUpload.files.splice(+btn.getAttribute('data-i'), 1); renderPicked(); return;
       case 'del-doc': deleteDoc(btn.getAttribute('data-id')); return;
       case 'install': installApp(); return;
+      case 'rep-tab': repState.id = btn.getAttribute('data-id'); rerender(); return;
+      case 'rep-xlsx': try { exportReport(); } catch (e) { handleError(e); } return;
+      case 'rep-print': window.print(); return;
+      case 'export-all': try { exportAll(); } catch (e) { handleError(e); } return;
       case 'reload-app': location.reload(); return;
       case 'new-jr': openJournal(); return;
       case 'edit-jr': openJournal(btn.getAttribute('data-id')); return;
