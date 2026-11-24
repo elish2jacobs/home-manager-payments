@@ -10,7 +10,7 @@
   var FOLDER_MIME = 'application/vnd.google-apps.folder';
   var SHEET_MIME = 'application/vnd.google-apps.spreadsheet';
   var SCHEMA_VERSION = 1;
-  var APP_VERSION = '0.9.8';
+  var APP_VERSION = '0.9.9';
   var TERMS_VERSION = '2026-11-24'; // לשנות כשמשנים את התנאים — כולם יתבקשו לאשר שוב
 
   var ROOT_NAME = 'פרויקט הבית שלי';
@@ -489,7 +489,7 @@
         event: kind, email: state.user.email, name: state.user.name || '',
         device: deviceLabel(),
         version: APP_VERSION, track: kind === 'signup' ? '' : String(state.s.track || ''),
-        terms: kind === 'terms' ? TERMS_VERSION : ''
+        terms: kind === 'terms' ? TERMS_VERSION : (state.s.termsVersion || ''), termsAt: kind === 'terms' ? nowIso() : (state.s.termsAcceptedAt || '')
       });
       postLog(body);
     } catch (e) { /* לעולם לא חוסם את האפליקציה */ }
