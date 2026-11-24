@@ -23,7 +23,7 @@
     ExpenseCategories: ['id', 'order', 'name', 'budget', 'updatedAt'],
     Expenses: ['id', 'categoryId', 'name', 'supplier', 'estimate', 'commitment', 'status', 'startDate', 'endDate', 'notes', 'updatedAt'],
     Contacts: ['id', 'domain', 'company', 'role', 'name', 'phone', 'phone2', 'email', 'notes', 'updatedAt'],
-    Documents: ['id', 'driveFileId', 'name', 'type', 'links', 'description', 'uploadedAt'],
+    Documents: ['id', 'driveFileId', 'name', 'type', 'links', 'description', 'uploadedAt', 'webViewLink', 'mimeType', 'size'],
     Journal: ['id', 'date', 'title', 'description', 'area', 'links', 'notes', 'updatedAt'],
     Tasks: ['id', 'title', 'description', 'area', 'dueDate', 'owner', 'priority', 'status', 'notes', 'updatedAt'],
     IndexHistory: ['year', 'month', 'value', 'publishedAt', 'source', 'updatedAt'],
@@ -40,7 +40,7 @@
     stages: [],       // ContractorStages
     requests: [], payments: [], sheetGids: {},
     cbs: null,        // data/index.json
-    scenarios: [], categories: [], expenses: []
+    scenarios: [], categories: [], expenses: [], docs: [], folders: {}
   };
   var tokenClient = null;
   var pendingToken = null;   // {resolve,reject,promise}
@@ -445,7 +445,7 @@
     state.rootId = proj.root.id; state.rootLink = proj.root.webViewLink;
     state.sheetId = proj.sheet.id; state.sheetLink = proj.sheet.webViewLink;
     loading('טוען נתונים…');
-    return ensureHeaders().then(function () { return Promise.all([loadSettings(), loadStages(), loadRequests(), loadPayments(), loadCbs(), loadScenarios(), loadExpenses()]); }).then(loadCategories).then(function () {
+    return ensureHeaders().then(function () { return Promise.all([loadSettings(), loadStages(), loadRequests(), loadPayments(), loadCbs(), loadScenarios(), loadExpenses(), loadDocs()]); }).then(loadCategories).then(function () {
       syncIndexHistory();
       show('screen-app');
       renderUser();
@@ -480,6 +480,8 @@
     up: '<path d="m6 15 6-6 6 6"/>', down: '<path d="m6 9 6 6 6-6"/>', trash: '<path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/>',
     plus: '<path d="M12 5v14M5 12h14"/>', check: '<path d="M20 6 9 17l-5-5"/>',
     edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/>', right: '<path d="m9 18 6-6-6-6"/>',
+    clip: '<path d="M21 11.5 12.5 20a5 5 0 0 1-7-7L14 4.5a3.5 3.5 0 0 1 5 5L10.5 18a2 2 0 0 1-3-3L15 7.5"/>',
+    image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 17-5-5-9 8"/>',
     menu: '<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>'
   };
   var ROUTES = [
@@ -998,6 +1000,7 @@
           (t1 && !q.indexValue && C.num(q.baseAmount) && row.linkedBase ? '<div class="muted small">טרם הוזן מדד</div>' : '') +
           (diff ? '<div class="warn-text small">בדרישת הקבלן: ' + M(C.num(q.contractorAmount)) + ' · הפרש ' + M(C.num(q.contractorAmount) - C.num(q.finalAmount)) + '</div>' : '') +
           '</div><div class="item-side"><b class="num">' + M(C.num(q.finalAmount)) + '</b><span class="tools">' +
+          clipBtn('req:' + q.id) +
           '<button type="button" class="icon-btn" data-action="edit-req" data-id="' + esc(q.id) + '" aria-label="עריכת דרישה">' + icon('edit', 18) + '</button>' +
           '<button type="button" class="icon-btn danger" data-action="del-req" data-id="' + esc(q.id) + '" aria-label="מחיקת דרישה">' + icon('trash', 18) + '</button></span></div></li>';
       }).join('') : '<li class="muted small">עדיין לא הוזנה דרישה.</li>';
@@ -1005,6 +1008,7 @@
         return '<li class="item"><div><b>' + C.fmtDate(p.date) + '</b> · <span class="muted small">' + esc(methodLabel(p.method)) + (p.fundingSource ? ' · ' + esc(p.fundingSource) : '') + '</span>' +
           (p.reference ? '<div class="muted small">אסמכתא ' + esc(p.reference) + '</div>' : '') + '</div>' +
           '<div class="item-side"><b class="num">' + M(C.num(p.amount)) + '</b><span class="tools">' +
+          clipBtn('pay:' + p.id) +
           '<button type="button" class="icon-btn" data-action="edit-pay" data-id="' + esc(p.id) + '" aria-label="עריכת תשלום">' + icon('edit', 18) + '</button>' +
           '<button type="button" class="icon-btn danger" data-action="del-pay" data-id="' + esc(p.id) + '" aria-label="מחיקת תשלום">' + icon('trash', 18) + '</button></span></div></li>';
       }).join('') : '<li class="muted small">עדיין לא נרשם תשלום.</li>';
@@ -1019,7 +1023,8 @@
         '<div class="row"><button type="button" class="btn btn-secondary" data-action="new-req" data-stage="' + esc(row.stageId) + '">דרישת תשלום</button>' +
         '<button type="button" class="btn btn-primary" data-action="new-pay" data-stage="' + esc(row.stageId) + '">רישום תשלום</button></div></section>' +
         '<section class="card"><h2>דרישות תשלום</h2><ul class="items">' + reqList + '</ul></section>' +
-        '<section class="card"><h2>תשלומים</h2><ul class="items">' + payList + '</ul></section>';
+        '<section class="card"><h2>תשלומים</h2><ul class="items">' + payList + '</ul></section>' +
+        '<section class="card"><div class="row between"><h2>מסמכים</h2><button type="button" class="btn btn-secondary btn-sm" data-action="attach" data-link="stage:' + esc(row.stageId) + '">' + icon('clip', 16) + 'צירוף מסמך</button></div><ul class="items">' + docItems(stageDocs(row.stageId), true) + '</ul></section>';
     },
 
     calculator: function () {
@@ -1036,6 +1041,7 @@
       return calc;
     },
     expenses: function () { if (!isSetup()) return needSetupCard(); return expensesView(); },
+    documents: function () { return documentsView(); },
     category: function (r, param) { if (!isSetup()) return needSetupCard(); return categoryView(param); },
     more: function () {
       return '<section class="card"><ul class="more-list">' + ROUTES.filter(function (r) { return !r.mobile; }).map(function (r) {
@@ -1238,8 +1244,8 @@
     }).join('');
     return '<section class="card"><div class="stats">' + stat('תקציב', M(t.budget)) + stat('צפי הוצאות', M(t.value)) + stat('התחייבויות', M(t.commit)) + stat('שולם', M(t.paid)) + '</div>' + vatNote() +
       '<p class="hint">"צפי הוצאות" = סכום ההתחייבות, ואם אין — ההערכה.</p>' +
-      '<div class="row"><button type="button" class="btn btn-primary" data-action="new-exp">הוצאה חדשה</button>' +
-      '<button type="button" class="btn btn-secondary" data-action="new-pay" data-type="expense">רישום תשלום</button>' +
+      '<div class="row"><button type="button" class="btn btn-secondary" data-action="new-exp">הוצאה חדשה</button>' +
+      '<button type="button" class="btn btn-primary" data-action="new-pay" data-type="expense">רישום תשלום</button>' +
       '<button type="button" class="btn btn-ghost" data-action="new-cat">קטגוריה חדשה</button></div></section>' +
       '<section class="card"><h2>קטגוריות</h2><ul class="cats">' + list + '</ul></section>';
   }
@@ -1257,6 +1263,7 @@
         (e.notes ? '<div class="muted small">' + esc(e.notes) + '</div>' : '') + '</div>' +
         '<div class="item-side"><b class="num">' + M(x.value) + '</b><span class="tools">' +
         (x.status !== 'cancelled' ? '<button type="button" class="icon-btn" data-action="new-pay" data-type="expense" data-exp="' + esc(e.id) + '" aria-label="רישום תשלום">' + icon('pay', 18) + '</button>' : '') +
+        clipBtn('exp:' + e.id) +
         '<button type="button" class="icon-btn" data-action="edit-exp" data-id="' + esc(e.id) + '" aria-label="עריכה">' + icon('edit', 18) + '</button>' +
         '<button type="button" class="icon-btn danger" data-action="del-exp" data-id="' + esc(e.id) + '" aria-label="מחיקה">' + icon('trash', 18) + '</button></span></div></li>';
     }).join('') || '<li class="muted small">אין עדיין פריטים בקטגוריה.</li>';
@@ -1264,18 +1271,20 @@
       .sort(function (x, y) { return x.date < y.date ? 1 : -1; });
     var payList = pays.map(function (p) {
       return '<li class="item"><div><b>' + esc(expById(p.expenseId).name) + '</b><div class="muted small">' + C.fmtDate(p.date) + ' · ' + esc(methodLabel(p.method)) + '</div></div>' +
-        '<div class="item-side"><b class="num">' + M(C.num(p.amount)) + '</b><span class="tools">' +
+        '<div class="item-side"><b class="num">' + M(C.num(p.amount)) + '</b><span class="tools">' + clipBtn('pay:' + p.id) +
         '<button type="button" class="icon-btn" data-action="edit-pay" data-id="' + esc(p.id) + '" aria-label="עריכת תשלום">' + icon('edit', 18) + '</button>' +
         '<button type="button" class="icon-btn danger" data-action="del-pay" data-id="' + esc(p.id) + '" aria-label="מחיקת תשלום">' + icon('trash', 18) + '</button></span></div></li>';
     }).join('') || '<li class="muted small">עדיין לא נרשמו תשלומים.</li>';
     return '<a class="back" href="#/expenses">' + icon('right', 18) + 'הוצאות נוספות</a>' +
       '<section class="card"><div class="stats">' + stat('תקציב', a.budget ? M(a.budget) : '<a href="#" data-action="edit-cat" data-id="' + esc(c.id) + '">להגדרה</a>') +
       stat('צפי הוצאות', M(a.value)) + stat('שולם', M(a.paid)) + stat(a.over ? 'חריגה' : 'יתרת תקציב', a.budget ? M(Math.abs(a.left)) : '—') + '</div>' + vatNote() +
-      '<div class="row"><button type="button" class="btn btn-primary" data-action="new-exp" data-cat="' + esc(c.id) + '">הוצאה חדשה</button>' +
+      '<div class="row"><button type="button" class="btn btn-secondary" data-action="new-exp" data-cat="' + esc(c.id) + '">הוצאה חדשה</button>' +
+      '<button type="button" class="btn btn-primary" data-action="new-pay" data-type="expense" data-exp="' + esc((expRows(c.id).filter(function (r) { return r.x.status !== 'cancelled'; })[0] || { e: {} }).e.id || '') + '">רישום תשלום</button>' +
       '<button type="button" class="btn btn-secondary" data-action="edit-cat" data-id="' + esc(c.id) + '">עריכת קטגוריה</button>' +
       '<button type="button" class="btn btn-ghost danger-text" data-action="del-cat" data-id="' + esc(c.id) + '">מחיקה</button></div></section>' +
       '<section class="card"><h2>פריטים</h2><ul class="items">' + items + '</ul></section>' +
-      '<section class="card"><h2>תשלומים</h2><ul class="items">' + payList + '</ul></section>';
+      '<section class="card"><h2>תשלומים</h2><ul class="items">' + payList + '</ul></section>' +
+      '<section class="card"><h2>מסמכים</h2><p class="hint">לצירוף מסמך להוצאה או לתשלום — סמל האטב שבשורה.</p><ul class="items">' + docItems(catDocs(c.id), true) + '</ul></section>';
   }
 
   // חלונות: קטגוריה והוצאה
@@ -1377,6 +1386,211 @@
       '<svg viewBox="0 0 180 180" width="180" height="180" role="img" aria-label="תרשים התחייבויות לפי תחום">' + paths +
       '<text x="90" y="86" text-anchor="middle" class="donut-k">סה״כ</text><text x="90" y="106" text-anchor="middle" class="donut-v">' + esc(M(total)) + '</text></svg>' +
       '<ul class="legend">' + legend + '</ul></div><p class="hint">לחיצה על שורה מסתירה או מחזירה אותה לתרשים.</p></section>';
+  }
+
+  // ---------- מסמכים ----------
+  var DOC_TYPES = [['contract', 'חוזה'], ['request', 'דרישת תשלום'], ['receipt', 'קבלה / אישור תשלום'], ['quote', 'הצעת מחיר'], ['invoice', 'חשבונית'], ['photo', 'תמונה'], ['other', 'אחר']];
+  function docTypeLabel(t) { var f = DOC_TYPES.filter(function (x) { return x[0] === t; })[0]; return f ? f[1] : 'אחר'; }
+  function loadDocs() { return readRows('Documents').then(function (r) { state.docs = r.filter(function (x) { return x.id; }); return state.docs; }); }
+  function docLinks(d) { return String(d.links || '').split(',').filter(Boolean); }
+  function docsFor(key) { return state.docs.filter(function (d) { return docLinks(d).indexOf(key) >= 0; }); }
+  // כל המסמכים של אבן דרך: שלה + של הדרישות והתשלומים שלה
+  function stageDocs(stageId) {
+    var keys = ['stage:' + stageId].concat(reqsOf(stageId).map(function (q) { return 'req:' + q.id; })).concat(paysOf(stageId).map(function (p) { return 'pay:' + p.id; }));
+    return state.docs.filter(function (d) { return docLinks(d).some(function (k) { return keys.indexOf(k) >= 0; }); });
+  }
+  function catDocs(catId) {
+    var keys = [];
+    state.expenses.filter(function (e) { return e.categoryId === catId; }).forEach(function (e) {
+      keys.push('exp:' + e.id); expPays(e.id).forEach(function (p) { keys.push('pay:' + p.id); });
+    });
+    return state.docs.filter(function (d) { return docLinks(d).some(function (k) { return keys.indexOf(k) >= 0; }); });
+  }
+  // תיאור קריא של שיוך
+  function linkLabel(key) {
+    var p = String(key).split(':'), t = p[0], id = p.slice(1).join(':');
+    if (t === 'stage') return 'אבן דרך: ' + stageName(id);
+    if (t === 'req') { var q = state.requests.filter(function (x) { return x.id === id; })[0]; return q ? 'דרישה · ' + stageName(q.stageId) : 'דרישה (נמחקה)'; }
+    if (t === 'pay') {
+      var pay = state.payments.filter(function (x) { return x.id === id; })[0];
+      if (!pay) return 'תשלום (נמחק)';
+      if (pay.type === 'expense') { var e = expById(pay.expenseId); return 'תשלום · ' + (e ? e.name : ''); }
+      return 'תשלום · ' + stageName(pay.stageId);
+    }
+    if (t === 'exp') { var ex = expById(id); return ex ? 'הוצאה: ' + ex.name : 'הוצאה (נמחקה)'; }
+    return 'כללי';
+  }
+  function docScope(d) {
+    var k = docLinks(d)[0] || '';
+    if (/^(stage|req):/.test(k)) return 'contractor';
+    if (/^exp:/.test(k)) return 'expenses';
+    if (/^pay:/.test(k)) { var p = state.payments.filter(function (x) { return 'pay:' + x.id === k; })[0]; return p && p.type === 'expense' ? 'expenses' : 'contractor'; }
+    return 'general';
+  }
+  function docFolderRole(link) {
+    var k = link || '';
+    if (/^(stage|req):/.test(k)) return 'sub1';
+    if (/^exp:/.test(k)) return 'sub2';
+    if (/^pay:/.test(k)) { var p = state.payments.filter(function (x) { return 'pay:' + x.id === k; })[0]; return p && p.type === 'expense' ? 'sub2' : 'sub1'; }
+    return 'sub3';
+  }
+  var SUB_NAMES = { sub1: '01_קבלן', sub2: '02_הוצאות נוספות', sub3: '03_מסמכים כלליים', sub4: '04_תיעוד', sub5: '05_גיבויים' };
+  function folderId(role) {
+    state.folders = state.folders || {};
+    if (state.folders[role]) return Promise.resolve(state.folders[role]);
+    return driveList("'" + state.rootId + "' in parents and appProperties has { key='hmRole' and value='" + role + "' } and trashed=false", 'id')
+      .then(function (f) {
+        if (f.length) return f[0].id;
+        return driveCreate({ name: SUB_NAMES[role], mimeType: FOLDER_MIME, parents: [state.rootId], appProperties: { hmApp: 'hmp', hmRole: role } }).then(function (x) { return x.id; });
+      }).then(function (id) { state.folders[role] = id; return id; });
+  }
+  // הקטנת תמונות לפני העלאה (עד 2000 פיקסלים, JPEG)
+  function shrinkImage(file) {
+    if (!/^image\/(jpeg|png|webp|heic|heif)$/i.test(file.type) || file.size < 600 * 1024) return Promise.resolve(file);
+    return new Promise(function (resolve) {
+      var url = URL.createObjectURL(file), img = new Image();
+      img.onload = function () {
+        var max = 2000, w = img.naturalWidth, h = img.naturalHeight, k = Math.min(1, max / Math.max(w, h));
+        var cv = document.createElement('canvas'); cv.width = Math.round(w * k); cv.height = Math.round(h * k);
+        cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+        cv.toBlob(function (b) {
+          URL.revokeObjectURL(url);
+          if (!b || b.size >= file.size) { resolve(file); return; }
+          var name = file.name.replace(/\.[^.]+$/, '') + '.jpg';
+          try { resolve(new File([b], name, { type: 'image/jpeg' })); } catch (e) { b.name = name; resolve(b); }
+        }, 'image/jpeg', 0.82);
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); resolve(file); };
+      img.src = url;
+    });
+  }
+  function authFetch(url, opts) {
+    if (!tokenValid(0)) return Promise.reject(new AuthError('פג תוקף החיבור.'));
+    opts = opts || {}; opts.headers = opts.headers || {};
+    opts.headers.Authorization = 'Bearer ' + state.token;
+    return fetch(url, opts).then(function (r) {
+      if (r.status === 401) { state.token = null; sessSet('token', null); throw new AuthError('פג תוקף החיבור.'); }
+      return r;
+    });
+  }
+  var UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
+  function uploadToDrive(file, parentId, name) {
+    var meta = { name: name || file.name, parents: [parentId], appProperties: { hmApp: 'hmp', hmRole: 'doc' } };
+    var fields = 'fields=id,name,webViewLink,mimeType,size';
+    var type = file.type || 'application/octet-stream';
+    if (file.size <= 5 * 1024 * 1024) {
+      var boundary = 'hmp' + uid();
+      var body = new Blob(['--' + boundary + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(meta) + '\r\n--' + boundary + '\r\nContent-Type: ' + type + '\r\n\r\n', file, '\r\n--' + boundary + '--'], { type: 'multipart/related; boundary=' + boundary });
+      return authFetch(UPLOAD + '?uploadType=multipart&' + fields, { method: 'POST', headers: { 'Content-Type': 'multipart/related; boundary=' + boundary }, body: body })
+        .then(function (r) { if (!r.ok) throw new Error('העלאה נכשלה (' + r.status + ')'); return r.json(); });
+    }
+    // קובץ גדול: העלאה בשני שלבים
+    return authFetch(UPLOAD + '?uploadType=resumable&' + fields, { method: 'POST', headers: { 'Content-Type': 'application/json; charset=UTF-8', 'X-Upload-Content-Type': type }, body: JSON.stringify(meta) })
+      .then(function (r) {
+        var loc = r.headers.get('Location');
+        if (!r.ok || !loc) throw new Error('הקובץ גדול מדי להעלאה מהדפדפן. נסה קובץ קטן מ-5MB.');
+        return fetch(loc, { method: 'PUT', headers: { 'Content-Type': type }, body: file });
+      }).then(function (r) { if (!r.ok) throw new Error('העלאה נכשלה (' + r.status + ')'); return r.json(); });
+  }
+
+  // חלון העלאה
+  var docUpload = null; // {link, files:[], type, desc}
+  function linkOptions() {
+    var o = [['', 'כללי — ללא שיוך']];
+    ledger().forEach(function (r, i) { o.push(['stage:' + r.stageId, 'אבן דרך ' + (i + 1) + ': ' + r.name]); });
+    state.requests.forEach(function (q) { o.push(['req:' + q.id, 'דרישה · ' + stageName(q.stageId) + ' · ' + C.fmtDate(q.receivedDate)]); });
+    state.payments.forEach(function (p) { o.push(['pay:' + p.id, linkLabel('pay:' + p.id) + ' · ' + C.fmtDate(p.date)]); });
+    state.expenses.forEach(function (e) { var c = catById(e.categoryId); o.push(['exp:' + e.id, 'הוצאה: ' + (c ? c.name + ' — ' : '') + e.name]); });
+    return o;
+  }
+  function openDocUpload(link, type) {
+    form = { kind: 'doc', data: { link: link || '', type: type || (/^req:/.test(link || '') ? 'request' : (/^pay:/.test(link || '') ? 'receipt' : (/^exp:/.test(link || '') ? 'quote' : 'other'))), desc: '' } };
+    docUpload = { files: [] };
+    var fixed = !!link;
+    openModal('צירוף מסמך', (fixed ? '<div class="badge info" style="align-self:flex-start">' + esc(linkLabel(link)) + '</div>' : '') +
+      '<div class="pick-row"><label class="btn btn-secondary file-btn">בחירת קבצים<input type="file" id="doc-files" multiple accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx"></label>' +
+      '<label class="btn btn-secondary file-btn">צילום<input type="file" id="doc-camera" accept="image/*" capture="environment"></label></div>' +
+      '<ul class="file-list" id="doc-picked"><li class="muted small">לא נבחרו קבצים.</li></ul>' +
+      '<div class="fields">' + ff('type', 'סוג המסמך', { type: 'select', options: DOC_TYPES }) +
+      (fixed ? '' : ff('link', 'שיוך', { type: 'select', options: linkOptions(), wide: true })) +
+      ff('desc', 'תיאור (אופציונלי)', { wide: true }) + '</div>' +
+      '<p class="hint">הקבצים נשמרים ב-Google Drive שלך, בתיקיית הפרויקט. תמונות גדולות מוקטנות אוטומטית.</p>' +
+      '<div class="error-box" id="m-err" hidden></div><div class="upload-status small" id="doc-status"></div>' +
+      '<div class="modal-actions"><button type="button" class="btn btn-ghost" data-action="modal-close">ביטול</button><button type="button" class="btn btn-primary" data-action="save-doc">העלאה</button></div>');
+    ['doc-files', 'doc-camera'].forEach(function (id) {
+      $(id).addEventListener('change', function (e) {
+        Array.prototype.forEach.call(e.target.files, function (f) { docUpload.files.push(f); });
+        e.target.value = '';
+        renderPicked();
+      });
+    });
+  }
+  function fmtSize(n) { n = C.num(n); return n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
+  function renderPicked() {
+    var ul = $('doc-picked'); if (!ul) return;
+    ul.innerHTML = docUpload.files.length ? docUpload.files.map(function (f, i) {
+      return '<li><span>' + esc(f.name) + ' <span class="muted small">' + fmtSize(f.size) + '</span></span><button type="button" class="icon-btn danger" data-action="doc-unpick" data-i="' + i + '" aria-label="הסר">' + icon('trash', 16) + '</button></li>';
+    }).join('') : '<li class="muted small">לא נבחרו קבצים.</li>';
+  }
+  function saveDocs(btn) {
+    if (!docUpload.files.length) { showErrors('m-err', ['יש לבחור לפחות קובץ אחד']); return; }
+    var d = form.data, link = d.link, role = docFolderRole(link), st = $('doc-status');
+    btn.disabled = true; setSync('busy', 'מעלה…');
+    var files = docUpload.files.slice(), done = 0, rows = [];
+    folderId(role).then(function (fid) {
+      return files.reduce(function (p, f) {
+        return p.then(function () {
+          if (st) st.textContent = 'מעלה ' + (done + 1) + ' מתוך ' + files.length + ': ' + f.name;
+          return shrinkImage(f).then(function (ff2) { return uploadToDrive(ff2, fid); }).then(function (res) {
+            done++;
+            rows.push([uid(), res.id, res.name, d.type, link, d.desc || '', nowIso(), res.webViewLink || '', res.mimeType || '', String(res.size || '')]);
+          });
+        });
+      }, Promise.resolve());
+    }).then(function () { return appendRows('Documents', rows); }).then(loadDocs).then(function () {
+      setSync('', 'נשמר'); toast(done === 1 ? 'המסמך הועלה' : done + ' מסמכים הועלו', 'ok');
+      logActivity('upload', 'Documents', done + ' files'); closeModal(); rerender();
+    }).catch(function (e) {
+      setSync('err', 'העלאה נכשלה');
+      if (rows.length) appendRows('Documents', rows).then(loadDocs).then(rerender);
+      if (st) st.textContent = '';
+      showErrors('m-err', [(e && e.message) || 'העלאה נכשלה', rows.length ? rows.length + ' קבצים הועלו לפני השגיאה.' : '']);
+      if (e instanceof AuthError) handleError(e);
+    }).then(function () { btn.disabled = false; });
+  }
+  function deleteDoc(id) {
+    var d = state.docs.filter(function (x) { return x.id === id; })[0]; if (!d) return;
+    if (!confirm('למחוק את "' + d.name + '"?\nהקובץ יועבר לסל המחזור של Google Drive.')) return;
+    withSync(api(DRIVE + '/files/' + encodeURIComponent(d.driveFileId) + '?fields=id', { method: 'PATCH', body: { trashed: true } })
+      .catch(function (e) { if (e instanceof AuthError) throw e; /* הקובץ אולי כבר נמחק ב-Drive */ })
+      .then(function () { return deleteRow('Documents', d._row); }).then(loadDocs), 'המסמך נמחק').then(rerender).catch(handleError);
+  }
+  function docIcon(d) { return /^image\//.test(d.mimeType || '') ? 'image' : 'docs'; }
+  function docItems(list, showLink) {
+    if (!list.length) return '<li class="muted small">אין מסמכים.</li>';
+    return list.slice().sort(function (a, b) { return a.uploadedAt < b.uploadedAt ? 1 : -1; }).map(function (d) {
+      var href = d.webViewLink || ('https://drive.google.com/file/d/' + encodeURIComponent(d.driveFileId) + '/view');
+      return '<li class="item doc"><a class="doc-main" href="' + esc(href) + '" target="_blank" rel="noopener">' + icon(docIcon(d), 22) +
+        '<div><b>' + esc(d.name) + '</b><div class="muted small">' + esc(docTypeLabel(d.type)) + ' · ' + C.fmtDate(String(d.uploadedAt).slice(0, 10)) +
+        (showLink ? ' · ' + esc(docLinks(d).length ? linkLabel(docLinks(d)[0]) : 'כללי') : '') + '</div>' +
+        (d.description ? '<div class="muted small">' + esc(d.description) + '</div>' : '') + '</div></a>' +
+        '<button type="button" class="icon-btn danger" data-action="del-doc" data-id="' + esc(d.id) + '" aria-label="מחיקת מסמך">' + icon('trash', 18) + '</button></li>';
+    }).join('');
+  }
+  function clipBtn(key) {
+    var n = docsFor(key).length;
+    return '<button type="button" class="icon-btn clip" data-action="attach" data-link="' + esc(key) + '" aria-label="צירוף מסמך' + (n ? ' (' + n + ' מצורפים)' : '') + '">' + icon('clip', 18) + (n ? '<span class="clip-n">' + n + '</span>' : '') + '</button>';
+  }
+  var docFilter = { type: '', scope: '' };
+  function documentsView() {
+    var list = state.docs.filter(function (d) { return (!docFilter.type || d.type === docFilter.type) && (!docFilter.scope || docScope(d) === docFilter.scope); });
+    var opt = function (arr, v) { return arr.map(function (o) { return '<option value="' + o[0] + '"' + (v === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join(''); };
+    return '<section class="card"><div class="row between"><div class="muted small">' + state.docs.length + ' מסמכים · ' +
+      '<a href="' + esc(state.rootLink) + '" target="_blank" rel="noopener">לתיקייה ב-Drive</a></div>' +
+      '<button type="button" class="btn btn-primary" data-action="attach" data-link="">העלאת מסמך</button></div>' +
+      '<div class="fields"><div class="field"><label for="df-type">סוג</label><select id="df-type" data-df="type">' + opt([['', 'הכול']].concat(DOC_TYPES), docFilter.type) + '</select></div>' +
+      '<div class="field"><label for="df-scope">תחום</label><select id="df-scope" data-df="scope">' + opt([['', 'הכול'], ['contractor', 'קבלן'], ['expenses', 'הוצאות נוספות'], ['general', 'כללי']], docFilter.scope) + '</select></div></div></section>' +
+      '<section class="card"><ul class="items">' + docItems(list, true) + '</ul></section>';
   }
 
   // ---------- טפסי דרישה ותשלום (חלון) ----------
@@ -1649,6 +1863,7 @@
       if (ck === 'targetIdx') calcForm.manual = true;
       updateCalcOut(); return;
     }
+    if (t.hasAttribute('data-df')) { docFilter[t.getAttribute('data-df')] = t.value; softRerender(); return; }
     if (t.hasAttribute('data-sc')) { scDraft[+t.getAttribute('data-i')][t.getAttribute('data-sc')] = t.getAttribute('data-sc') === 'name' ? t.value : t.value; return; }
     if (!draft) return;
     if (t.hasAttribute('data-k')) {
@@ -1740,6 +1955,10 @@
       case 'del-pay': deletePayment(btn.getAttribute('data-id')); return;
       case 'save-pay': savePayment(btn); return;
       case 'modal-close': closeModal(); return;
+      case 'attach': openDocUpload(btn.getAttribute('data-link')); return;
+      case 'save-doc': saveDocs(btn); return;
+      case 'doc-unpick': docUpload.files.splice(+btn.getAttribute('data-i'), 1); renderPicked(); return;
+      case 'del-doc': deleteDoc(btn.getAttribute('data-id')); return;
       case 'pick-sc':
         withSync(saveSettings({ scenarioId: btn.getAttribute('data-id') }), 'התרחיש נבחר').then(softRerender).catch(handleError); return;
       case 'sc-add': scDraft.push({ id: uid(), name: 'תרחיש חדש', y1: 3, y2: 3, y3: 3 }); scEditOpen = true; softRerender(); return;
