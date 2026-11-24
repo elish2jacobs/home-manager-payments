@@ -438,3 +438,12 @@ html.nav-collapsed .sidebar-foot .btn{padding:6px 0}
 .sum-grp h3{font-size:14px;color:var(--brand);margin-bottom:6px}
 .wiz-nav .row{gap:8px;flex-wrap:wrap;justify-content:flex-end}
 #login-err{margin-top:12px;text-align:right}
+.brand{padding-inline:6px;gap:8px}
+.brand>span{white-space:nowrap;font-size:17px}
+/* מדבקות הוצאות */
+.stickers{display:inline-flex;flex-wrap:wrap;gap:6px}
+.sticker{display:inline-flex;align-items:center;border-radius:999px;padding:3px 10px;font-size:12.5px;font-weight:700;white-space:nowrap}
+.sticker.pay{background:var(--accent-soft);color:var(--accent-ink)}
+.sticker.ok{background:var(--ok-soft);color:var(--ok)}
+.sticker.over{background:var(--err-soft);color:var(--err)}
+.sticker.none{background:var(--bg);color:var(--muted);font-weight:500}

@@ -10,7 +10,7 @@
   var FOLDER_MIME = 'application/vnd.google-apps.folder';
   var SHEET_MIME = 'application/vnd.google-apps.spreadsheet';
   var SCHEMA_VERSION = 1;
-  var APP_VERSION = '0.9.3';
+  var APP_VERSION = '0.9.4';
 
   var ROOT_NAME = 'פרויקט הבית שלי';
   var DATA_NAME = 'נתוני הבית';
@@ -1303,18 +1303,28 @@
   function catAgg(c) {
     var rows = expRows(c.id);
     var a = { budget: C.num(c.budget), commit: 0, est: 0, value: 0, paid: 0, count: rows.length };
-    rows.forEach(function (r) { a.commit += r.x.commit; a.est += r.x.commit > 0 ? 0 : r.x.value; a.value += r.x.value; a.paid += r.x.paid; });
+    a.toPay = 0;
+    rows.forEach(function (r) { a.commit += r.x.commit; a.est += r.x.commit > 0 ? 0 : r.x.value; a.value += r.x.value; a.paid += r.x.paid; a.toPay += r.x.remaining; });
     a.over = a.budget > 0 && a.value > a.budget + 0.5;
     a.left = a.budget - a.value;
     return a;
+  }
+  // מדבקות: לתשלום (התחייבות פחות שולם) + יתרת תקציב / חריגה
+  function expStickers(a) {
+    var out = '';
+    if (a.toPay > 0.5) out += '<span class="sticker pay">לתשלום ' + M(a.toPay) + '</span>';
+    if (a.budget > 0) out += a.over ? '<span class="sticker over">חריגה ' + M(-a.left) + '</span>' : '<span class="sticker ok">יתרת תקציב ' + M(a.left) + '</span>';
+    else out += '<span class="sticker none">ללא תקציב</span>';
+    return '<span class="stickers">' + out + '</span>';
   }
   function expStatusBadge(st) {
     var cls = { planning: 'muted-b', quote: 'muted-b', committed: 'info', partial: 'warn', paid: 'ok', cancelled: 'muted-b' }[st];
     return '<span class="badge ' + cls + '">' + C.EXP_STATUS[st] + '</span>';
   }
   function expTotals() {
-    var t = { budget: 0, commit: 0, value: 0, paid: 0 };
-    state.categories.forEach(function (c) { var a = catAgg(c); t.budget += a.budget; t.commit += a.commit; t.value += a.value; t.paid += a.paid; });
+    var t = { budget: 0, commit: 0, value: 0, paid: 0, toPay: 0 };
+    state.categories.forEach(function (c) { var a = catAgg(c); t.budget += a.budget; t.commit += a.commit; t.value += a.value; t.paid += a.paid; t.toPay += a.toPay; });
+    t.left = t.budget - t.value; t.over = t.budget > 0 && t.value > t.budget + 0.5;
     return t;
   }
 
@@ -1329,10 +1339,10 @@
         '<div class="bar-row"><span class="bar-lbl">שולם מול התחייבות</span><div class="bar thin"><div class="paid" style="width:' + (a.commit > 0 ? Math.min(100, a.paid / a.commit * 100) : 0).toFixed(1) + '%"></div></div>' +
         '<span class="small muted num">' + (a.commit > 0 ? Math.round(a.paid / a.commit * 100) + '%' : '—') + '</span></div>' +
         '<div class="row between small muted"><span>' + a.count + ' פריטים' + (a.paid ? ' · שולם ' + M(a.paid) : '') + '</span>' +
-        (a.over ? '<span class="badge warn">חריגה ' + M(-a.left) + '</span>' : (a.budget ? '<span>יתרה ' + M(a.left) + '</span>' : '<span>ללא תקציב</span>')) + '</div></a></li>';
+        expStickers(a) + '</div></a></li>';
     }).join('');
-    return '<section class="card"><div class="stats">' + stat('תקציב', M(t.budget)) + stat('צפי הוצאות', M(t.value)) + stat('התחייבויות', M(t.commit)) + stat('שולם', M(t.paid)) + '</div>' + vatNote() +
-      '<p class="hint">"צפי הוצאות" = סכום ההתחייבות, ואם אין — ההערכה.</p>' +
+    return '<section class="card"><div class="stats">' + stat('תקציב', M(t.budget)) + stat('צפי הוצאות', M(t.value)) + stat('התחייבויות', M(t.commit)) + stat('שולם', M(t.paid)) + '</div>' + '<div class="row">' + expStickers(t) + vatNote() + '</div>' +
+      '<p class="hint">"צפי הוצאות" = סכום ההתחייבות, ואם אין — ההערכה. "לתשלום" = מה שהתחייבת ועוד לא שולם. "יתרת תקציב" = תקציב פחות צפי.</p>' +
       '<div class="row"><button type="button" class="btn btn-secondary" data-action="new-exp">הוצאה חדשה</button>' +
       '<button type="button" class="btn btn-primary" data-action="new-pay" data-type="expense">רישום תשלום</button>' +
       '<button type="button" class="btn btn-ghost" data-action="new-cat">קטגוריה חדשה</button></div></section>' +
@@ -1366,7 +1376,7 @@
     }).join('') || '<li class="muted small">עדיין לא נרשמו תשלומים.</li>';
     return '<a class="back" href="#/expenses">' + icon('right', 18) + 'הוצאות נוספות</a>' +
       '<section class="card"><div class="stats">' + stat('תקציב', a.budget ? M(a.budget) : '<a href="#" data-action="edit-cat" data-id="' + esc(c.id) + '">להגדרה</a>') +
-      stat('צפי הוצאות', M(a.value)) + stat('שולם', M(a.paid)) + stat(a.over ? 'חריגה' : 'יתרת תקציב', a.budget ? M(Math.abs(a.left)) : '—') + '</div>' + vatNote() +
+      stat('צפי הוצאות', M(a.value)) + stat('התחייבויות', M(a.commit)) + stat('שולם', M(a.paid)) + '</div>' + '<div class="row">' + expStickers(a) + vatNote() + '</div>' +
       '<div class="row"><button type="button" class="btn btn-secondary" data-action="new-exp" data-cat="' + esc(c.id) + '">הוצאה חדשה</button>' +
       '<button type="button" class="btn btn-primary" data-action="new-pay" data-type="expense" data-exp="' + esc((expRows(c.id).filter(function (r) { return r.x.status !== 'cancelled'; })[0] || { e: {} }).e.id || '') + '">רישום תשלום</button>' +
       '<button type="button" class="btn btn-secondary" data-action="edit-cat" data-id="' + esc(c.id) + '">עריכת קטגוריה</button>' +
@@ -2820,6 +2830,7 @@
   function onModalInput(t) {
     var k = t.getAttribute('data-mf');
     form.data[k] = t.value;
+    if (k === 'amount') form.amountTouched = true;
     if (form.kind === 'req') {
       if (k === 'stageId' && !form.data.id) { form.data.baseAmount = defaultReqBase(t.value); var b = $('m-baseAmount'); if (b) b.value = form.data.baseAmount; }
       if (k === 'indexValue' || k === 'indexMonth') form.data.indexSource = 'manual';
@@ -2827,7 +2838,7 @@
       refreshIndexHint();
       updateRequestCalc();
     } else if (form.kind === 'pay' && k === 'expenseId') {
-      prefillExpAmount(); var am = $('m-amount'); if (am) am.value = form.data.amount;
+      if (!form.amountTouched && !form.data.id) { prefillExpAmount(); var am = $('m-amount'); if (am) am.value = form.data.amount; }
       var e = expById(form.data.expenseId), x = e ? C.expenseCalc(e, expPays(e.id)) : null, h = $('mh-amount'); if (h) h.textContent = x && x.commit ? 'יתרה להתחייבות: ' + C.fmtMoney(x.remaining) : '';
     } else if (form.kind === 'pay' && k === 'stageId') {
       form.data.requestId = ''; var row = findStage(t.value);
