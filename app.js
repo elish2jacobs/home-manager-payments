@@ -10,6 +10,7 @@
   var FOLDER_MIME = 'application/vnd.google-apps.folder';
   var SHEET_MIME = 'application/vnd.google-apps.spreadsheet';
   var SCHEMA_VERSION = 1;
+  var APP_VERSION = '0.9.0';
 
   var ROOT_NAME = 'פרויקט הבית שלי';
   var DATA_NAME = 'נתוני הבית';
@@ -61,7 +62,7 @@
     return p(d.getDate()) + '/' + p(d.getMonth() + 1) + '/' + d.getFullYear() + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
   }
   function show(screenId) {
-    ['screen-loading', 'screen-login', 'screen-create', 'screen-config', 'screen-app'].forEach(function (id) {
+    ['screen-loading', 'screen-login', 'screen-create', 'screen-config', 'screen-offline', 'screen-app'].forEach(function (id) {
       $(id).hidden = id !== screenId;
     });
   }
@@ -489,6 +490,7 @@
     mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
     tasks: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 3 3 5-6"/>',
     x: '<path d="M6 6l12 12M18 6 6 18"/>',
+    download: '<path d="M12 4v11"/><path d="m7 10 5 5 5-5"/><path d="M5 20h14"/>',
     grid: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
     list: '<path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>',
     menu: '<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>'
@@ -761,6 +763,9 @@
   // ---------- הגדרות ----------
   function settingsView() {
     var t = String(draft.track);
+    var appSec = '<section class="card" id="sec-app"><h2>אפליקציה</h2>' + kv('גרסה', '<span class="num">' + esc(APP_VERSION) + '</span>') +
+      '<div id="install-status">' + installStatusHtml() + '</div>' +
+      '<p class="hint">התקנה מוסיפה אייקון למסך הבית או לשולחן העבודה, והאפליקציה נפתחת במסך מלא. עדכונים מגיעים אוטומטית.</p></section>';
     var cloud = '<section class="card" id="sec-cloud"><h2>ענן וחשבון</h2>' +
       kv('חשבון', esc(state.user && state.user.email)) +
       kv('תיקייה ב-Drive', '<a href="' + esc(state.rootLink) + '" target="_blank" rel="noopener">' + esc(ROOT_NAME) + '</a>') +
@@ -793,7 +798,7 @@
       stageEditor() +
       '<div class="error-box" id="err-stages" hidden></div>' +
       '<div class="row end"><button type="button" class="btn btn-primary" data-action="save-stages">שמירת הלוח</button></div></section>' +
-      cloud;
+      appSec + cloud;
   }
   function saveProject(btn) {
     var errs = [];
@@ -1060,7 +1065,7 @@
     more: function () {
       return '<section class="card"><ul class="more-list">' + ROUTES.filter(function (r) { return !r.mobile; }).map(function (r) {
         return '<li><a href="#/' + r.id + '">' + icon(r.icon) + '<span>' + r.title + '</span>' + icon('right', 16) + '</a></li>';
-      }).join('') + '</ul></section>' +
+      }).join('') + '<li class="install-entry"' + (canInstall() ? '' : ' hidden') + '><a href="#" data-action="install">' + icon('download') + '<span>התקנת האפליקציה</span>' + icon('right', 16) + '</a></li></ul></section>' +
         '<section class="card"><div class="muted small">' + esc(state.user && state.user.email) + '</div><div class="row"><button type="button" class="btn btn-secondary btn-sm" data-action="logout">התנתקות</button></div></section>';
     },
     payments: function () {
@@ -1254,7 +1259,7 @@
       var a = catAgg(c);
       var pct = a.budget > 0 ? Math.min(100, a.value / a.budget * 100) : (a.value > 0 ? 100 : 0);
       return '<li><a class="cat" href="#/category/' + encodeURIComponent(c.id) + '">' +
-        '<div class="row between"><b>' + esc(c.name) + '</b><span class="num">' + M(a.value) + (a.budget ? ' <span class="muted small">מתוך ' + M(a.budget) + '</span>' : '') + '</span></div>' +
+        '<div class="row between"><b>' + esc(c.name) + '</b><span><span class="num">' + M(a.value) + '</span>' + (a.budget ? ' <span class="muted small">מתוך ' + M(a.budget) + '</span>' : '') + '</span></div>' +
         '<div class="bar-row"><span class="bar-lbl">צפי מול תקציב</span><div class="bar thin"><div style="width:' + pct.toFixed(1) + '%' + (a.over ? ';background:var(--accent)' : '') + '"></div></div></div>' +
         '<div class="bar-row"><span class="bar-lbl">שולם מול התחייבות</span><div class="bar thin"><div class="paid" style="width:' + (a.commit > 0 ? Math.min(100, a.paid / a.commit * 100) : 0).toFixed(1) + '%"></div></div>' +
         '<span class="small muted num">' + (a.commit > 0 ? Math.round(a.paid / a.commit * 100) + '%' : '—') + '</span></div>' +
@@ -1645,7 +1650,7 @@
       }).catch(handleError);
   }
   function docIcon(d) { return /^image\//.test(d.mimeType || '') ? 'image' : (/^video\//.test(d.mimeType || '') ? 'video' : 'docs'); }
-  function docItems(list, showLink) {
+  function docItems(list, showLink, canDelete) {
     if (!list.length) return '<li class="muted small">אין מסמכים.</li>';
     return list.slice().sort(function (a, b) { return a.uploadedAt < b.uploadedAt ? 1 : -1; }).map(function (d) {
       var href = d.webViewLink || ('https://drive.google.com/file/d/' + encodeURIComponent(d.driveFileId) + '/view');
@@ -1653,7 +1658,7 @@
         '<div><b>' + esc(d.name) + '</b><div class="muted small">' + esc(docTypeLabel(d.type)) + ' · ' + C.fmtDate(String(d.uploadedAt).slice(0, 10)) +
         (showLink ? ' · ' + esc(docLinks(d).length ? linkLabel(docLinks(d)[0]) : 'כללי') : '') + '</div>' +
         (d.description ? '<div class="muted small">' + esc(d.description) + '</div>' : '') + '</div></a>' +
-        '<button type="button" class="icon-btn danger" data-action="del-doc" data-id="' + esc(d.id) + '" aria-label="מחיקת מסמך">' + icon('trash', 18) + '</button></li>';
+        (canDelete ? '<button type="button" class="icon-btn danger" data-action="del-doc" data-id="' + esc(d.id) + '" aria-label="מחיקת מסמך">' + icon('trash', 18) + '</button>' : '') + '</li>';
     }).join('');
   }
   function clipBtn(key) {
@@ -1669,7 +1674,7 @@
       '<button type="button" class="btn btn-primary" data-action="attach" data-link="">העלאת מסמך</button></div>' +
       '<div class="fields"><div class="field"><label for="df-type">סוג</label><select id="df-type" data-df="type">' + opt([['', 'הכול']].concat(DOC_TYPES), docFilter.type) + '</select></div>' +
       '<div class="field"><label for="df-scope">תחום</label><select id="df-scope" data-df="scope">' + opt([['', 'הכול'], ['contractor', 'קבלן'], ['expenses', 'הוצאות נוספות'], ['journal', 'יומן תיעוד'], ['general', 'כללי']], docFilter.scope) + '</select></div></div></section>' +
-      '<section class="card"><ul class="items">' + docItems(list, true) + '</ul></section>';
+      '<section class="card"><ul class="items">' + docItems(list, true, true) + '</ul></section>';
   }
 
   // ---------- תצוגות: כרטיסיות / רשימה, ומיון טבלאות ----------
@@ -1735,8 +1740,7 @@
         (j.notes ? '<p class="jr-notes">' + esc(j.notes) + '</p>' : '') +
         (docs.length ? '<ul class="chips">' + docs.map(function (d) {
           var href = d.webViewLink || ('https://drive.google.com/file/d/' + encodeURIComponent(d.driveFileId) + '/view');
-          return '<li class="chip-x"><a href="' + esc(href) + '" target="_blank" rel="noopener">' + icon(docIcon(d), 16) + '<span>' + esc(d.name) + '</span></a>' +
-            '<button type="button" class="x" data-action="del-doc" data-id="' + esc(d.id) + '" aria-label="מחיקת ' + esc(d.name) + '">' + icon('x', 14) + '</button></li>';
+          return '<li><a href="' + esc(href) + '" target="_blank" rel="noopener">' + icon(docIcon(d), 16) + '<span>' + esc(d.name) + '</span></a></li>';
         }).join('') + '</ul>' : '') + '</div></li>';
     }).join('');
     var opt = function (arr, v) { return arr.map(function (o) { return '<option value="' + esc(o[0]) + '"' + (v === o[0] ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join(''); };
@@ -1752,7 +1756,7 @@
           var docs = docsFor('jr:' + j.id);
           return docs.length ? '<ul class="chips">' + docs.map(function (d) {
             var href = d.webViewLink || ('https://drive.google.com/file/d/' + encodeURIComponent(d.driveFileId) + '/view');
-            return '<li class="chip-x"><a href="' + esc(href) + '" target="_blank" rel="noopener" title="' + esc(d.name) + '">' + icon(docIcon(d), 16) + '</a><button type="button" class="x" data-action="del-doc" data-id="' + esc(d.id) + '" aria-label="מחיקת ' + esc(d.name) + '">' + icon('x', 14) + '</button></li>';
+            return '<li><a href="' + esc(href) + '" target="_blank" rel="noopener" title="' + esc(d.name) + '" aria-label="' + esc(d.name) + '">' + icon(docIcon(d), 16) + '</a></li>';
           }).join('') + '</ul>' : '<span class="muted">—</span>';
         } },
         { k: 'act', label: 'פעולות', noSort: true, get: function () { return ''; }, html: function (j) {
@@ -1846,7 +1850,7 @@
         { k: 'name', label: 'שם', get: function (c) { return c.name; }, html: function (c) { return '<b>' + esc(c.name) + '</b>'; } },
         { k: 'phone', label: 'טלפון', get: function (c) { return c.phone; }, html: function (c) { return '<span class="num nowrap">' + esc(c.phone) + '</span>'; } },
         { k: 'phone2', label: 'טלפון נוסף', get: function (c) { return c.phone2; }, html: function (c) { return '<span class="num nowrap">' + esc(c.phone2) + '</span>'; } },
-        { k: 'email', label: 'מייל', get: function (c) { return c.email; } },
+        { k: 'email', label: 'מייל', get: function (c) { return c.email; }, html: function (c) { return '<span class="nowrap">' + esc(c.email) + '</span>'; } },
         { k: 'notes', label: 'הערות', get: function (c) { return c.notes; }, html: function (c) { return '<span class="clamp">' + esc(c.notes) + '</span>'; } },
         { k: 'act', label: 'פעולות', noSort: true, get: function () { return ''; }, html: function (c) { return '<span class="ct-actions nowrap">' + ctActions(c) + '</span>'; } }
       ]) + '</section>';
@@ -2342,6 +2346,8 @@
       case 'save-doc': saveDocs(btn); return;
       case 'doc-unpick': docUpload.files.splice(+btn.getAttribute('data-i'), 1); renderPicked(); return;
       case 'del-doc': deleteDoc(btn.getAttribute('data-id')); return;
+      case 'install': installApp(); return;
+      case 'reload-app': location.reload(); return;
       case 'new-jr': openJournal(); return;
       case 'edit-jr': openJournal(btn.getAttribute('data-id')); return;
       case 'save-jr': saveJournal(btn); return;
@@ -2409,6 +2415,56 @@
   }
 
   // ---------- אתחול ----------
+
+  // ---------- אפליקציה מותקנת (PWA) ----------
+  var pwa = { prompt: null };
+  function isStandalone() { return (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true; }
+  function isIOS() { return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); }
+  function canInstall() { return !isStandalone() && (!!pwa.prompt || isIOS()); }
+  function refreshInstallUI() {
+    Array.prototype.forEach.call(document.querySelectorAll('.install-entry'), function (el) { el.hidden = !canInstall(); });
+    var st = $('install-status'); if (st) st.innerHTML = installStatusHtml();
+  }
+  function installStatusHtml() {
+    if (isStandalone()) return '<span class="badge ok">האפליקציה מותקנת ופועלת כאפליקציה</span>';
+    if (pwa.prompt) return '<button type="button" class="btn btn-primary btn-sm" data-action="install">' + icon('download', 16) + 'התקנת האפליקציה</button>';
+    if (isIOS()) return '<button type="button" class="btn btn-primary btn-sm" data-action="install">' + icon('download', 16) + 'איך מתקינים באייפון</button>';
+    return '<p class="hint">אם האפליקציה כבר מותקנת — פתח אותה מהאייקון. אחרת, בכרום או באדג׳: תפריט הדפדפן ← "התקנת אפליקציה" / "הוספה למסך הבית".</p>';
+  }
+  function installApp() {
+    if (pwa.prompt) {
+      var p = pwa.prompt; pwa.prompt = null;
+      p.prompt();
+      (p.userChoice || Promise.resolve({})).then(function (c) { if (c && c.outcome === 'accepted') toast('האפליקציה מותקנת', 'ok'); refreshInstallUI(); });
+      return;
+    }
+    if (isIOS()) {
+      openModal('התקנה באייפון / אייפד',
+        '<ol class="steps-list">' +
+        '<li>פתח את האתר ב-<b>Safari</b>.</li>' +
+        '<li>לחץ על כפתור <b>השיתוף</b> (ריבוע עם חץ למעלה) בתחתית המסך.</li>' +
+        '<li>גלול ובחר <b>"הוסף למסך הבית"</b>, ואז <b>"הוסף"</b>.</li>' +
+        '<li>מעכשיו פתח את האפליקציה מהאייקון "הבית שלי" — היא תיפתח במסך מלא.</li></ol>' +
+        '<div class="row"><button type="button" class="btn btn-primary" data-action="modal-close">הבנתי</button></div>');
+      return;
+    }
+    toast('ההתקנה זמינה מתפריט הדפדפן', '');
+  }
+  function initPwa() {
+    window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); pwa.prompt = e; refreshInstallUI(); });
+    window.addEventListener('appinstalled', function () { pwa.prompt = null; toast('האפליקציה הותקנה', 'ok'); refreshInstallUI(); });
+    if (isStandalone()) document.documentElement.classList.add('standalone');
+    refreshInstallUI();
+    if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
+    var hadController = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.register('sw.js').then(function (reg) {
+      setInterval(function () { reg.update().catch(function () {}); }, 60 * 60 * 1000);
+    }).catch(function () {});
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (hadController) { var b = $('update-bar'); if (b) b.hidden = false; }
+      hadController = true;
+    });
+  }
   function waitForGis(cb, tries) {
     tries = tries || 0;
     if (window.google && google.accounts && google.accounts.oauth2) return cb();
@@ -2418,6 +2474,9 @@
   function boot() {
     if (!C) { document.body.innerHTML = '<p style="padding:24px">קובץ calc.js חסר.</p>'; return; }
     if (!CFG.CLIENT_ID || /PASTE_YOUR_CLIENT_ID/.test(CFG.CLIENT_ID)) { show('screen-config'); return; }
+    initPwa();
+    $('btn-retry').addEventListener('click', function () { location.reload(); });
+    if (navigator.onLine === false) { show('screen-offline'); window.addEventListener('online', function () { location.reload(); }, { once: true }); return; }
     buildNav();
     window.addEventListener('hashchange', route);
     document.addEventListener('pointerdown', maybeRenewOnGesture, true);

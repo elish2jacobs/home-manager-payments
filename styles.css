@@ -319,7 +319,10 @@ textarea:focus{outline:3px solid #BBD4F2;border-color:var(--brand-2)}
 .chip-x .x:hover{background:var(--err-soft);color:var(--err)}
 .small-seg button{padding:6px 10px;min-height:36px;display:inline-flex;align-items:center;gap:6px;font-size:13px}
 #ct-results{display:flex;flex-direction:column;gap:16px}
-.data-tbl{min-width:760px}
+.data-tbl{min-width:100%;width:max-content}
+.data-tbl td:last-child{white-space:nowrap;width:1%}
+.data-tbl .ct-actions,.data-tbl .tools{flex-wrap:nowrap;display:inline-flex}
+.data-tbl td .clamp{min-width:140px}
 .data-tbl td{vertical-align:top}
 .th-btn{font:inherit;font-size:13px;font-weight:500;color:var(--muted);background:none;border:0;padding:0;cursor:pointer;display:inline-flex;gap:4px;align-items:center;min-height:32px;text-align:right}
 .th-btn:hover{color:var(--ink)}
@@ -329,3 +332,9 @@ th[aria-sort="ascending"] .th-btn,th[aria-sort="descending"] .th-btn{color:var(-
 .clamp{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;max-width:260px}
 .data-tbl .chips a{padding:4px 8px;min-height:32px}
 @media (max-width:760px){.small-seg span{display:none}.bar-row{grid-template-columns:96px minmax(0,1fr) 36px}}
+/* PWA */
+.steps-list{margin:0 0 16px;padding-inline-start:22px;display:flex;flex-direction:column;gap:8px}
+.more-list li[hidden]{display:none}
+#install-status .btn svg{margin-inline-end:6px}
+html.standalone body{overscroll-behavior-y:none}
+@media (max-width:760px){html.standalone .topbar{padding-top:calc(12px + env(safe-area-inset-top))}}

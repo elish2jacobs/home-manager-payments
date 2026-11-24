@@ -64,7 +64,7 @@
   }
   function fmtMoney(n) {
     if (n == null || !isFinite(n)) return '—';
-    return Math.round(n).toLocaleString('en-US') + ' ₪';
+    return '\u2066' + Math.round(n).toLocaleString('en-US') + ' ₪\u2069'; // בידוד LTR — ₪ תמיד מימין למספר
   }
   function fmtPct(n) {
     return (Math.round(n * 100) / 100).toString() + '%';

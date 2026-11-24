@@ -4,15 +4,23 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#15365C">
+  <meta name="description" content="ניהול תשלומים, הצמדה והוצאות של הבית החדש. הנתונים נשמרים ב-Google Drive שלך.">
   <title>Home Manager Payments</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="הבית שלי">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=0.8.1">
+  <link rel="stylesheet" href="styles.css?v=0.9.0">
   <script src="config.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="calc.js?v=0.8.1" defer></script>
-  <script src="app.js?v=0.8.1" defer></script>
+  <script src="calc.js?v=0.9.0" defer></script>
+  <script src="app.js?v=0.9.0" defer></script>
 </head>
 <body>
 
@@ -58,6 +66,18 @@
     </div>
   </div>
 
+  <!-- אין חיבור -->
+  <div id="screen-offline" class="screen center" hidden>
+    <div class="auth-card">
+      <div class="logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8.5a15 15 0 0 1 20 0"/><path d="M5 12a10 10 0 0 1 14 0"/><path d="M8.5 15.5a5 5 0 0 1 7 0"/><path d="M12 19h.01"/><path d="M3 3l18 18"/></svg>
+      </div>
+      <h1>אין חיבור לאינטרנט</h1>
+      <p class="muted">הנתונים שלך נשמרים ב-Google Drive, ולכן האפליקציה צריכה חיבור. התחבר לרשת ונסה שוב.</p>
+      <button type="button" class="btn btn-primary btn-lg" id="btn-retry">נסה שוב</button>
+    </div>
+  </div>
+
   <!-- האפליקציה -->
   <div id="screen-app" class="shell" hidden>
     <aside class="sidebar" aria-label="ניווט">
@@ -68,11 +88,16 @@
       <nav class="nav" id="nav"></nav>
       <div class="sidebar-foot">
         <div class="user" id="user-box"></div>
+        <button type="button" class="btn btn-ghost-dark btn-sm install-entry" data-action="install" hidden>התקנת האפליקציה</button>
         <button type="button" class="btn btn-ghost-dark btn-sm" data-action="logout">התנתקות</button>
       </div>
     </aside>
 
     <div class="content">
+      <div id="update-bar" class="reconnect" role="status" hidden>
+        <span>יש גרסה חדשה של האפליקציה.</span>
+        <button type="button" class="btn btn-sm btn-primary" data-action="reload-app">רענן</button>
+      </div>
       <div id="reconnect" class="reconnect" role="alert" hidden>
         <span>החיבור ל-Google פג. השינויים שלא נשמרו עדיין כאן.</span>
         <button type="button" class="btn btn-sm btn-primary" data-action="reconnect">המשך</button>
