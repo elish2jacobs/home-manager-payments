@@ -1,0 +1,44 @@
+name: עדכון מדד תשומות הבנייה
+
+on:
+  schedule:
+    # כל יום ב-17:15 UTC (בערב בישראל). הסקריפט לא משנה כלום אם המדד כבר עדכני.
+    - cron: '15 17 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'למשוך מחדש גם אם המדד עדכני'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-index
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: משיכת המדד מהלמ"ס
+        env:
+          FORCE: ${{ inputs.force }}
+        run: node update-index.mjs
+      - name: שמירה במאגר (רק אם השתנה)
+        run: |
+          if [ -n "$(git status --porcelain data/index.json)" ]; then
+            git config user.name "index-bot"
+            git config user.email "index-bot@users.noreply.github.com"
+            git add data/index.json
+            git commit -m "עדכון מדד תשומות הבנייה"
+            git push
+          else
+            echo "אין שינוי"
+          fi
