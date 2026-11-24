@@ -27,21 +27,66 @@ async function getJson(url) {
   if (!r.ok) throw new Error(`HTTP ${r.status} for ${url}`);
   return r.json();
 }
+// מחפש בעץ JSON כל אובייקט שנראה כמו "מדד": מזהה מספרי (5–6 ספרות) + שם
 function findCodes(node, out = []) {
   if (Array.isArray(node)) node.forEach(n => findCodes(n, out));
   else if (node && typeof node === 'object') {
-    if (node.codeId != null && node.codeName) out.push({ code: Number(node.codeId), name: String(node.codeName) });
-    Object.values(node).forEach(v => findCodes(v, out));
+    let code = null, name = null;
+    for (const [k, v] of Object.entries(node)) {
+      const val = Array.isArray(v) && v.length === 1 && typeof v[0] !== 'object' ? v[0] : v;
+      if (code == null && /code|id/i.test(k) && /^\d{5,6}$/.test(String(val))) code = Number(val);
+      if (name == null && /name|desc|title/i.test(k) && typeof val === 'string' && val.trim()) name = val.trim();
+    }
+    if (code != null && name) out.push({ code, name });
+    Object.values(node).forEach(v => { if (v && typeof v === 'object') findCodes(v, out); });
   }
   return out;
 }
-async function discoverCode() {
-  const data = await getJson(`${API}/catalog/chapter?id=${CHAPTER}&format=json&download=false&lang=he`);
-  const codes = findCodes(data);
-  console.log('Codes found in chapter', CHAPTER, ':');
+const dedupe = list => list.filter((c, i) => list.findIndex(x => x.code === c.code) === i);
+function choose(codes, label) {
+  console.log(`Candidates from ${label}:`);
   codes.slice(0, 40).forEach(c => console.log('  ', c.code, c.name));
-  if (!codes.length) throw new Error('No index codes found in chapter ' + CHAPTER);
-  const pick = codes.find(c => /כללי|סך הכל|סה"כ|כולל/.test(c.name)) || codes[0];
+  const rel = codes.filter(c => /תשומ/.test(c.name) && /מגורים/.test(c.name));
+  return rel.find(c => /כללי|סך הכל|סה"כ/.test(c.name)) || rel[0] ||
+    codes.find(c => /כללי|סך הכל|סה"כ/.test(c.name)) || null;
+}
+async function discoverCode() {
+  // 1) הפרק של תשומות הבנייה למגורים
+  const ch = await getJson(`${API}/catalog/chapter?id=${CHAPTER}&format=json&download=false&lang=he`);
+  console.log('Chapter response (start):', JSON.stringify(ch).slice(0, 1500));
+  let codes = dedupe(findCodes(ch));
+  let pick = codes.length ? choose(codes, 'chapter ' + CHAPTER) : null;
+  // 2) כל קודי הנושאים בפרק
+  if (!pick) {
+    const subjIds = [];
+    (function walk(n) {
+      if (Array.isArray(n)) n.forEach(walk);
+      else if (n && typeof n === 'object') {
+        for (const [k, v] of Object.entries(n)) {
+          const val = Array.isArray(v) && v.length === 1 && typeof v[0] !== 'object' ? v[0] : v;
+          if (/subject.*id|^id$/i.test(k) && /^\d+$/.test(String(val))) subjIds.push(String(val));
+        }
+        Object.values(n).forEach(v => { if (v && typeof v === 'object') walk(v); });
+      }
+    })(ch);
+    console.log('Subject ids found:', [...new Set(subjIds)].join(', ') || '(none)');
+    for (const sid of [...new Set(subjIds)].slice(0, 10)) {
+      try {
+        const sub = await getJson(`${API}/catalog/subject?id=${sid}&format=json&download=false&lang=he`);
+        console.log(`Subject ${sid} (start):`, JSON.stringify(sub).slice(0, 600));
+        codes = dedupe(codes.concat(findCodes(sub)));
+      } catch (e) { console.log('subject', sid, e.message); }
+    }
+    pick = codes.length ? choose(codes, 'subjects') : null;
+  }
+  // 3) עץ המדדים המלא
+  if (!pick) {
+    const tree = await getJson(`${API}/catalog/tree?format=json&download=false&lang=he`);
+    console.log('Tree response (start):', JSON.stringify(tree).slice(0, 800));
+    codes = dedupe(findCodes(tree));
+    pick = choose(codes, 'tree');
+  }
+  if (!pick) throw new Error('Could not identify the index code automatically. Set INDEX_CODE (see log above for candidates).');
   console.log('Selected code:', pick.code, pick.name);
   return pick;
 }
@@ -66,6 +111,7 @@ async function main() {
   const url = `${API}/data/price?id=${code}&format=json&download=false&lang=he&startPeriod=${start}&endPeriod=12-${now.y}`;
   console.log('Fetching', url);
   const data = await getJson(url);
+  console.log('Price response (start):', JSON.stringify(data).slice(0, 800));
   const block = data?.month?.[0];
   if (!block?.date?.length) throw new Error('No monthly data returned: ' + JSON.stringify(data).slice(0, 300));
   name = block.name || name;
