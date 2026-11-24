@@ -39,7 +39,8 @@
     s: {},            // key -> value
     stages: [],       // ContractorStages
     requests: [], payments: [], sheetGids: {},
-    cbs: null         // data/index.json
+    cbs: null,        // data/index.json
+    scenarios: []
   };
   var tokenClient = null;
   var pendingToken = null;   // {resolve,reject,promise}
@@ -271,6 +272,12 @@
     if (obj._row) return api(SHEETS + '/' + state.sheetId + '/values/' + rng(name, 'A' + obj._row) + '?valueInputOption=RAW', { method: 'PUT', body: { values: [row] } });
     return appendRows(name, [row]);
   }
+  function loadScenarios() {
+    return readRows('Scenarios').then(function (r) {
+      state.scenarios = r.filter(function (x) { return x.id; }).map(function (x) { return { id: x.id, name: x.name, y1: C.num(x.y1), y2: C.num(x.y2), y3: C.num(x.y3), _row: x._row }; });
+      return state.scenarios;
+    });
+  }
   function loadGids() {
     return api(SHEETS + '/' + state.sheetId + '?fields=sheets.properties').then(function (ss) {
       var m = {}; (ss.sheets || []).forEach(function (x) { m[x.properties.title] = x.properties.sheetId; }); state.sheetGids = m; return m;
@@ -424,7 +431,7 @@
     state.rootId = proj.root.id; state.rootLink = proj.root.webViewLink;
     state.sheetId = proj.sheet.id; state.sheetLink = proj.sheet.webViewLink;
     loading('טוען נתונים…');
-    return ensureHeaders().then(function () { return Promise.all([loadSettings(), loadStages(), loadRequests(), loadPayments(), loadCbs()]); }).then(function () {
+    return ensureHeaders().then(function () { return Promise.all([loadSettings(), loadStages(), loadRequests(), loadPayments(), loadCbs(), loadScenarios()]); }).then(function () {
       syncIndexHistory();
       show('screen-app');
       renderUser();
@@ -497,6 +504,7 @@
     if (r.id !== lastRoute) {
       if (r.id === 'settings') draft = makeDraft();
       if (r.id === 'setup') startWizard();
+      if (r.id === 'calculator') initCalcPage();
     }
     lastRoute = r.id;
     document.querySelectorAll('[data-route]').forEach(function (a) {
@@ -518,7 +526,7 @@
 
   // ---------- טיוטה (אשף / הגדרות) ----------
   var KEYS = ['projectName', 'address', 'aptNo', 'contractor', 'signDate', 'deliveryDate', 'basePrice', 'track', 'fixSurcharge', 't3Surcharge',
-    'baseIndex', 'baseIndexMonth', 'exemptPct', 'linkedPct', 'indexRule', 'indexFloor', 'vatMode', 'vatRate'];
+    'baseIndex', 'baseIndexMonth', 'baseIndexLabel', 'exemptPct', 'linkedPct', 'indexRule', 'indexFloor', 'vatMode', 'vatRate'];
   function makeDraft() {
     var d = {};
     KEYS.forEach(function (k) { d[k] = state.s[k] != null && state.s[k] !== '' ? state.s[k] : (C.DEFAULT_SETTINGS[k] || ''); });
@@ -571,7 +579,8 @@
   function indexFields() {
     return '<div class="fields">' +
       field('baseIndex', 'מדד בסיס', { type: 'number', step: 'any', inputmode: 'decimal', placeholder: 'לדוגמה 143.5545', hint: 'כפי שכתוב בחוזה. אפשר להשלים גם אחר כך.' }) +
-      field('baseIndexMonth', 'חודש מדד הבסיס', { type: 'month', hint: '<span id="base-hint">' + baseIndexHint() + '</span>' }) +
+      field('baseIndexMonth', 'חודש מדד הבסיס', { type: 'month', hint: '<span id="base-hint">' + baseIndexHint() + '</span>' + (state.cbs ? ' <button type="button" class="link-btn" data-action="fill-base">מלא מדד לפי הלמ״ס</button>' : '') }) +
+      field('baseIndexLabel', 'בסיס המדד בחוזה (לתיעוד)', { placeholder: 'לדוגמה: יולי 2011 = 100', hint: 'לא משפיע על החישוב.' }) +
       field('exemptPct', 'חלק פטור ממדד בתחילת החוזה (%)', { type: 'number', step: 'any', inputmode: 'decimal', min: 0 }) +
       field('linkedPct', 'אחוז צמוד מכל תשלום (%)', { type: 'number', step: 'any', inputmode: 'decimal', min: 0 }) +
       field('indexRule', 'מדד קובע', { type: 'select', options: [['request', 'המדד הידוע במועד דרישת התשלום'], ['payment', 'המדד הידוע במועד התשלום בפועל']] }) +
@@ -579,7 +588,8 @@
       '</div>';
   }
   function baseIndexHint() {
-    if (!draft || !state.cbs) return '';
+    if (!draft) return '';
+    if (!state.cbs) return 'שירות המדד האוטומטי עדיין לא פעיל.';
     var ym = C.ymKey(draft.baseIndexMonth); if (!ym) return '';
     var v = cbsValue(ym.y, ym.m);
     if (v == null) return 'אין נתון בלמ״ס לחודש הזה.';
@@ -589,6 +599,8 @@
       var f = bi / v;
       out += Math.abs(f - 1) < 0.0005 ? ' החוזה באותו בסיס.' : ' מקדם המרה לבסיס החוזה: ' + f.toFixed(5) + '. מדדים מהלמ״ס יומרו אוטומטית.';
     }
+    var lat = cbsLatest();
+    if (lat) out += ' <span class="muted">· מדד אחרון במערכת: ' + C.monthName(lat.y, lat.m) + (state.cbs.updatedAt ? ', עודכן ' + fmtDateTime(state.cbs.updatedAt) : '') + '. בדיקה אוטומטית כל ערב.</span>';
     return out;
   }
   function stageEditor() {
@@ -776,7 +788,7 @@
     if (changed && !confirm('לשנות את מסלול החוזה ל"' + C.TRACKS[draft.track].name + '"?\nהסכומים בלוח התשלומים יחושבו מחדש.')) return;
     btn.disabled = true;
     var o = {};
-    ['basePrice', 'track', 'fixSurcharge', 't3Surcharge', 'baseIndex', 'baseIndexMonth', 'exemptPct', 'linkedPct', 'indexRule', 'indexFloor'].forEach(function (k) { o[k] = draft[k]; });
+    ['basePrice', 'track', 'fixSurcharge', 't3Surcharge', 'baseIndex', 'baseIndexMonth', 'baseIndexLabel', 'exemptPct', 'linkedPct', 'indexRule', 'indexFloor'].forEach(function (k) { o[k] = draft[k]; });
     withSync(saveSettings(o), 'החוזה נשמר').then(function () { logActivity('update', 'Settings', 'contract track=' + draft.track); return recalcRequests(); })
       .catch(handleError).then(function () { btn.disabled = false; });
   }
@@ -829,12 +841,65 @@
   function reqsOf(stageId) { return state.requests.filter(function (r) { return r.stageId === stageId; }); }
   function paysOf(stageId) { return state.payments.filter(function (p) { return p.type === 'contractor' && p.stageId === stageId; }); }
   // לוח + מצב לכל אבן דרך
+  function scenarioList() { return state.scenarios.length ? state.scenarios : C.DEFAULT_SCENARIOS; }
+  // תשלומים עתידיים מוערכים לפי המדד האחרון שפורסם (ללא תחזית אינפלציה)
+  var CURRENT_INDEX = { id: 'current', name: 'המדד האחרון שפורסם', y1: 0, y2: 0, y3: 0 };
+  function activeScenario() { return CURRENT_INDEX; }
+  function estBasisLabel() {
+    var lat = cbsLatest();
+    return lat && contractFactor() ? 'לפי המדד האחרון שפורסם (' + C.monthName(lat.y, lat.m) + ')' : 'לפי מדד הבסיס (ללא שינוי)';
+  }
+  // מדד משוער (בבסיס החוזה) לתאריך: אמיתי אם פורסם, אחרת תחזית לפי תרחיש
+  function estIndexAt(dateIso, sc, s) {
+    s = s || state.s;
+    var km = C.knownMonthFor(dateIso); if (!km) return null;
+    var f = contractFactor(s);
+    if (state.cbs && f) {
+      var raw = cbsValue(km.y, km.m);
+      if (raw != null) return { v: raw * f, actual: true };
+      var lat = cbsLatest();
+      if ((lat.y * 100 + lat.m) > (km.y * 100 + km.m)) return null;
+      return { v: C.forecastIndex(lat.v * f, lat.y, lat.m, km.y, km.m, sc, s.signDate), actual: false };
+    }
+    var bi = C.num(s.baseIndex), ym = C.ymKey(s.baseIndexMonth) || C.knownMonthFor(s.signDate);
+    if (!(bi > 0) || !ym) return null;
+    if ((ym.y * 100 + ym.m) >= (km.y * 100 + km.m)) return { v: bi, actual: false };
+    return { v: C.forecastIndex(bi, ym.y, ym.m, km.y, km.m, sc, s.signDate), actual: false };
+  }
+  // הצמדה משוערת לחלק של אבן הדרך שעוד אין לו מדד בפועל
+  function estAdjFor(row, sc, s, reqs) {
+    s = s || state.s;
+    if (String(s.track) !== '1' || !(row.linkedBase > 0) || !row.date) return 0;
+    var covered = (reqs || []).filter(function (q) { return q.indexValue !== ''; }).reduce(function (a, q) { return a + C.num(q.baseAmount); }, 0);
+    var remain = Math.max(0, row.base - covered);
+    if (remain <= 0.5) return 0;
+    var bi = C.num(s.baseIndex); if (!(bi > 0)) return 0;
+    var e = estIndexAt(row.date, sc, s); if (!e || !e.v) return 0;
+    var rate = e.v / bi - 1;
+    if (String(s.indexFloor) !== 'false' && rate < 0) rate = 0;
+    return C.round2(row.linkedBase * (remain / row.base) * rate);
+  }
   function ledger() {
-    var today = todayIso();
+    var today = todayIso(), sc = activeScenario();
     return currentSchedule().map(function (r) {
-      r.st = C.stageStatus(r, reqsOf(r.stageId), paysOf(r.stageId), today);
+      var reqs = reqsOf(r.stageId);
+      r.st = C.stageStatus(r, reqs, paysOf(r.stageId), today);
+      r.est = r.st.status === 'paid' ? 0 : estAdjFor(r, sc, state.s, reqs);
+      r.st.forecast = C.round2(r.st.expected + r.est);
       return r;
     });
+  }
+  // סך ההצמדה הצפויה במסלול 1 לפי תרחיש (להשוואת מסלולים) — מתעלם מהמסלול הנוכחי
+  function track1AdjTotal(sc) {
+    var s1 = clone(state.s); s1.track = '1';
+    var list = state.stages.length ? state.stages : C.DEFAULT_STAGES;
+    var actual = String(state.s.track) === '1';
+    return C.schedule(s1, list).reduce(function (a, r, i) {
+      var sid = list[i].id;
+      var reqs = actual && sid ? reqsOf(sid) : [];
+      var act = reqs.reduce(function (x, q) { return x + C.num(q.indexAdj); }, 0);
+      return a + act + estAdjFor(r, sc, s1, reqs);
+    }, 0);
   }
   function findStage(id) { return ledger().filter(function (r) { return r.stageId === id; })[0]; }
 
@@ -892,9 +957,10 @@
           '<div class="stage-main"><span class="stage-n">' + (i + 1) + '</span><div><b>' + esc(r.name) + '</b>' +
           '<div class="muted small">' + C.fmtPct(r.pct) + ' · ' + (r.date ? C.fmtDate(r.date) : 'חודש ' + r.month) + '</div>' +
           '<div class="badges">' + statusBadge(r.st) + indexBadge(r) + '</div></div></div>' +
-          '<div class="stage-side"><b class="num">' + M(r.st.expected) + '</b>' +
-          (r.st.paid > 0 && r.st.remaining > 0.5 ? '<span class="muted small">יתרה ' + M(r.st.remaining) + '</span>' : '') +
+          '<div class="stage-side"><b class="num">' + M(r.st.forecast) + '</b>' +
+          (r.st.paid > 0 && r.st.forecast - r.st.paid > 0.5 ? '<span class="muted small">יתרה ' + M(r.st.forecast - r.st.paid) + '</span>' : '') +
           (r.st.adj ? '<span class="muted small">כולל הצמדה ' + M(r.st.adj) + '</span>' : '') +
+          (r.est ? '<span class="muted small">כולל הצמדה משוערת ' + M(r.est) + '</span>' : '') +
           '</div></a></li>';
       }).join('');
       return head + '<section class="card"><div class="row between"><h2>לוח התשלומים</h2><a class="btn btn-ghost btn-sm" href="#/settings">עריכת הלוח</a></div>' +
@@ -931,13 +997,26 @@
         '<section class="card"><div class="row between"><div class="muted small">' + C.fmtPct(row.pct) + ' מהחוזה · ' + (row.date ? 'צפוי ב-' + C.fmtDate(row.date) : '') + '</div>' + statusBadge(st) + '</div>' +
         '<div class="stats">' + stat('סכום בסיס', M(row.base)) +
         (t1 ? stat('חלק צמוד', row.linkedBase ? M(row.linkedBase) : 'פטור') : '') +
-        stat('סכום צפוי', M(st.expected)) + stat('שולם', M(st.paid)) + stat('יתרה', M(Math.max(0, st.remaining))) + '</div>' + vatNote() +
+        (t1 && row.linkedBase ? stat('הצמדה', M(st.adj) + (row.est ? '<span class="muted small"> + ' + M(row.est) + ' משוער</span>' : '')) : '') +
+        stat('סכום צפוי', M(st.forecast)) + stat('שולם', M(st.paid)) + stat('יתרה', M(Math.max(0, st.forecast - st.paid))) + '</div>' +
+        (row.est ? '<p class="hint">ההצמדה המשוערת ' + estBasisLabel() + '. תוחלף בהצמדה בפועל כשתוזן דרישה עם מדד.</p>' : '') + vatNote() +
         '<div class="row"><button type="button" class="btn btn-primary" data-action="new-req" data-stage="' + esc(row.stageId) + '">דרישת תשלום</button>' +
         '<button type="button" class="btn btn-secondary" data-action="new-pay" data-stage="' + esc(row.stageId) + '">רישום תשלום</button></div></section>' +
         '<section class="card"><h2>דרישות תשלום</h2><ul class="items">' + reqList + '</ul></section>' +
         '<section class="card"><h2>תשלומים</h2><ul class="items">' + payList + '</ul></section>';
     },
 
+    calculator: function () {
+      if (!isSetup()) return needSetupCard();
+      var cf = calcForm;
+      var calc = '<section class="card"><h2>מחשבון הצמדה</h2><p class="hint">חישוב עצמאי — לא משנה נתונים במערכת. מדד היעד ממולא מהלמ״ס ומומר לבסיס החוזה; אפשר גם להזין ידנית.</p><div class="fields">' +
+        cfield('amount', 'סכום (₪)', 'number') + cfield('baseIdx', 'מדד בסיס', 'number') +
+        cfield('targetMonth', 'חודש מדד יעד', 'month') + cfield('targetIdx', 'מדד יעד', 'number') +
+        cfield('linked', 'חלק צמוד (%)', 'number') +
+        '<div class="field"><label for="cf-floor">ירידת מדד</label><select id="cf-floor" data-cf="floor"><option value="true"' + (cf.floor ? ' selected' : '') + '>לא מתחת לבסיס</option><option value="false"' + (!cf.floor ? ' selected' : '') + '>מחושב גם בירידה</option></select></div>' +
+        '</div><div class="calc-box" id="calc-out"></div></section>';
+      return calc;
+    },
     payments: function () {
       if (!isSetup()) return needSetupCard();
       var rows = ledger();
@@ -964,7 +1043,8 @@
       if (!isSetup()) return needSetupCard();
       var s = state.s;
       var rows = ledger();
-      var commitment = rows.reduce(function (a, r) { return a + r.st.expected; }, 0);
+      var commitment = rows.reduce(function (a, r) { return a + r.st.forecast; }, 0);
+      var estTotal = rows.reduce(function (a, r) { return a + r.est; }, 0);
       var paid = rows.reduce(function (a, r) { return a + r.st.paid; }, 0);
       var adj = rows.reduce(function (a, r) { return a + r.st.adj; }, 0);
       var eff = C.effectivePrice(s);
@@ -991,13 +1071,13 @@
         '<div class="bar" role="img" aria-label="שולם ' + Math.round(paidPct) + ' אחוז"><div style="width:' + paidPct.toFixed(1) + '%"></div></div>' +
         '<div class="muted small">' + Math.round(paidPct) + '% שולם</div>' +
         '<div class="stats">' + stat('שולם בפועל', M(paid)) + stat('יתרה לתשלום', M(commitment - paid)) +
-        (t1 ? stat('הצמדה עד כה', M(adj)) : stat('תוספת חוזית', M(eff - C.num(s.basePrice)))) + '</div>' +
-        (t1 ? '<p class="hint">ההתחייבות כוללת הצמדה לפי הדרישות שהוזנו. הצמדה משוערת לתשלומים עתידיים תתווסף עם שירות המדד.</p>' : '') + vatNote() + '</section>';
+        (t1 ? stat('הצמדה בפועל', M(adj)) + stat('הצמדה משוערת', M(estTotal)) : stat('תוספת חוזית', M(eff - C.num(s.basePrice)))) + '</div>' +
+        (t1 ? '<p class="hint">כולל הצמדה משוערת לתשלומים עתידיים ' + estBasisLabel() + '.</p>' : '') + vatNote() + '</section>';
       var nextCard = next ? '<section class="card"><div class="row between"><h2>התשלום הבא</h2>' + statusBadge(next.st) + '</div>' +
         '<div><b style="font-size:18px">' + esc(next.name) + '</b><div class="muted small">' + (next.date ? 'צפוי ב-' + C.fmtDate(next.date) + ' · ' : '') + 'חודש ' + next.month + ' לפרויקט</div></div>' +
         kv('סכום בסיס', '<b class="num">' + M(next.base) + '</b>') +
-        (next.st.adj ? kv('הצמדה לפי דרישה', '<b class="num">' + M(next.st.adj) + '</b>') : kv('הצמדה', indexBadge(next))) +
-        kv('נותר לתשלום', '<b class="num">' + M(next.st.remaining) + '</b>') +
+        (next.st.adj ? kv('הצמדה לפי דרישה', '<b class="num">' + M(next.st.adj) + '</b>') : (next.est ? kv('הצמדה משוערת', '<b class="num">' + M(next.est) + '</b>') : kv('הצמדה', indexBadge(next)))) +
+        kv('נותר לתשלום', '<b class="num">' + M(next.st.forecast - next.st.paid) + '</b>') +
         '<div class="row"><a class="btn btn-secondary btn-sm" href="#/stage/' + encodeURIComponent(next.stageId) + '">לפרטים</a></div></section>' :
         '<section class="card"><div class="empty">' + icon('check', 28) + '<b>כל התשלומים לקבלן שולמו</b></div></section>';
       var alerts = [];
@@ -1030,6 +1110,45 @@
 
   function afterRender(id) {
     if (id === 'setup' || id === 'settings') updateEditorSummary();
+    if (id === 'calculator') updateCalcOut();
+  }
+
+  // ---------- תחזית ומחשבון ----------
+  var scDraft = [], scEditOpen = false;
+  var calcForm = { amount: '', baseIdx: '', targetMonth: '', targetIdx: '', linked: '', floor: true, manual: false };
+  function initCalcPage() {
+    scDraft = clone(scenarioList()).map(function (x) { delete x._row; return x; });
+    calcForm = { amount: '', baseIdx: state.s.baseIndex || '', targetMonth: '', targetIdx: '', linked: state.s.linkedPct || '100', floor: state.s.indexFloor !== 'false', manual: false };
+    var lat = cbsLatest();
+    if (lat) { calcForm.targetMonth = lat.y + '-' + ('0' + lat.m).slice(-2); fillCalcTarget(); }
+  }
+  function fillCalcTarget() {
+    var ym = C.ymKey(calcForm.targetMonth); if (!ym) return;
+    var raw = cbsValue(ym.y, ym.m);
+    var v = raw != null ? toContract(raw) : null;
+    calcForm.targetIdx = v != null ? String(v) : (raw != null ? String(raw) : '');
+    calcForm.manual = false;
+  }
+  function cfield(k, label, type) {
+    return '<div class="field"><label for="cf-' + k + '">' + label + '</label><input id="cf-' + k + '" data-cf="' + k + '" type="' + type + '"' +
+      (type === 'number' ? ' step="any" inputmode="decimal"' : '') + ' value="' + esc(calcForm[k]) + '">' +
+      (k === 'targetIdx' ? '<div class="hint" id="cf-hint"></div>' : '') + '</div>';
+  }
+  function updateCalcOut() {
+    var out = $('calc-out'); if (!out) return;
+    var cf = calcForm, A = C.num(cf.amount), bi = C.num(cf.baseIdx), ti = C.num(cf.targetIdx), lk = C.num(cf.linked) / 100;
+    var h = $('cf-hint');
+    if (h) {
+      var ym = C.ymKey(cf.targetMonth), raw = ym ? cbsValue(ym.y, ym.m) : null;
+      h.textContent = cf.manual ? 'הוזן ידנית' : (raw != null ? (contractFactor() ? 'לפי הלמ״ס, מומר לבסיס החוזה (' + raw + ' בלמ״ס)' : 'לפי הלמ״ס, בבסיס הנוכחי') : (ym ? 'אין נתון בלמ״ס לחודש הזה' : ''));
+    }
+    if (!(A > 0) || !(bi > 0) || !(ti > 0)) { out.innerHTML = '<p class="muted small">יש להזין סכום, מדד בסיס ומדד יעד.</p>'; return; }
+    var rate = ti / bi - 1;
+    if (cf.floor && rate < 0) rate = 0;
+    var linked = A * lk, adj = linked * rate;
+    out.innerHTML = kv('חלק לא צמוד', C.fmtMoney(A - linked)) + kv('חלק צמוד', C.fmtMoney(linked)) +
+      kv('שינוי במדד', (rate * 100).toFixed(3) + '%') + kv('הצמדה', C.fmtMoney(adj)) +
+      '<div class="kv total"><span class="k">סה״כ</span><b class="num">' + C.fmtMoney(A + adj) + '</b></div>';
   }
 
   // ---------- טפסי דרישה ותשלום (חלון) ----------
@@ -1236,6 +1355,14 @@
   function onInput(e) {
     var t = e.target;
     if (t.hasAttribute('data-mf')) { if (form) onModalInput(t); return; }
+    if (t.hasAttribute('data-cf')) {
+      var ck = t.getAttribute('data-cf');
+      calcForm[ck] = ck === 'floor' ? t.value === 'true' : t.value;
+      if (ck === 'targetMonth') { fillCalcTarget(); var ti = $('cf-targetIdx'); if (ti) ti.value = calcForm.targetIdx; }
+      if (ck === 'targetIdx') calcForm.manual = true;
+      updateCalcOut(); return;
+    }
+    if (t.hasAttribute('data-sc')) { scDraft[+t.getAttribute('data-i')][t.getAttribute('data-sc')] = t.getAttribute('data-sc') === 'name' ? t.value : t.value; return; }
     if (!draft) return;
     if (t.hasAttribute('data-k')) {
       var k = t.getAttribute('data-k');
@@ -1311,6 +1438,30 @@
       case 'del-pay': deletePayment(btn.getAttribute('data-id')); return;
       case 'save-pay': savePayment(btn); return;
       case 'modal-close': closeModal(); return;
+      case 'pick-sc':
+        withSync(saveSettings({ scenarioId: btn.getAttribute('data-id') }), 'התרחיש נבחר').then(softRerender).catch(handleError); return;
+      case 'sc-add': scDraft.push({ id: uid(), name: 'תרחיש חדש', y1: 3, y2: 3, y3: 3 }); scEditOpen = true; softRerender(); return;
+      case 'sc-del': if (scDraft.length > 1) { scDraft.splice(+btn.getAttribute('data-i'), 1); scEditOpen = true; softRerender(); } return;
+      case 'sc-reset': if (confirm('לטעון את תרחישי ברירת המחדל?')) { scDraft = clone(C.DEFAULT_SCENARIOS); scEditOpen = true; softRerender(); } return;
+      case 'sc-save': {
+        var bad = scDraft.some(function (x) { return !String(x.name).trim() || ['y1', 'y2', 'y3'].some(function (k) { var v = parseFloat(x[k]); return !isFinite(v) || v < -20 || v > 50; }); });
+        if (bad) { toast('יש לבדוק שמות ושיעורים (בין ‎-20 ל-50)', 'err'); return; }
+        btn.disabled = true;
+        var t = nowIso();
+        withSync(replaceRows('Scenarios', scDraft.map(function (x) { return { id: x.id, name: String(x.name).trim(), y1: C.num(x.y1), y2: C.num(x.y2), y3: C.num(x.y3), updatedAt: t }; })).then(loadScenarios), 'התרחישים נשמרו')
+          .then(function () {
+            if (!scenarioList().some(function (x) { return x.id === state.s.scenarioId; })) return saveSettings({ scenarioId: scenarioList()[0].id });
+          }).then(function () { scEditOpen = false; scDraft = clone(scenarioList()).map(function (x) { delete x._row; return x; }); softRerender(); })
+          .catch(handleError).then(function () { btn.disabled = false; });
+        return;
+      }
+      case 'fill-base': {
+        var ym = C.ymKey(draft.baseIndexMonth), raw = ym ? cbsValue(ym.y, ym.m) : null;
+        if (raw == null) { toast('אין נתון בלמ״ס לחודש הזה', 'err'); return; }
+        draft.baseIndex = String(raw);
+        if (!draft.baseIndexLabel && state.cbs && state.cbs.base) draft.baseIndexLabel = state.cbs.base;
+        softRerender(); toast('מדד הבסיס מולא לפי הלמ״ס (בסיס נוכחי). יש לוודא מול החוזה ולשמור.'); return;
+      }
       case 'index-revert': if (form) { form.data.indexSource = ''; autofillIndex(); refreshIndexHint(); updateRequestCalc(); } return;
       case 'save-display': {
         var r = C.num(draft.vatRate, -1);

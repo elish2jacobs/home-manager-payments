@@ -212,3 +212,27 @@ a.item.link:hover{background:var(--bg)}
   .modal .fields{grid-template-columns:1fr}
 }
 .link-btn{font:inherit;font-size:12px;background:none;border:0;color:var(--brand-2);text-decoration:underline;cursor:pointer;padding:0 2px}
+
+/* ---------- שלב 5: תחזית ומחשבון ---------- */
+.table-wrap{overflow-x:auto;margin:0 -4px}
+.tbl{width:100%;border-collapse:collapse;font-size:14px;min-width:640px}
+.tbl th{font-weight:500;color:var(--muted);text-align:right;padding:8px;border-bottom:2px solid var(--line);font-size:13px;vertical-align:bottom}
+.tbl td{padding:8px;border-bottom:1px solid var(--line)}
+.tbl tr.on td{background:#F7FAFE}
+.tbl td.best{color:var(--ok);font-weight:700}
+.radio-btn{width:28px;height:28px;border-radius:50%;border:2px solid #B9C7D8;background:#fff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;color:#fff;padding:0}
+.radio-btn[aria-checked="true"]{background:var(--brand-2);border-color:var(--brand-2)}
+.sc-edit summary{cursor:pointer;color:var(--brand-2);font-weight:500;padding:6px 0}
+.sc-rows{display:flex;flex-direction:column;gap:8px;margin:8px 0}
+.sc-row{display:grid;grid-template-columns:minmax(0,1fr) 90px 90px 90px 36px;gap:8px;align-items:center;background:var(--bg);border-radius:12px;padding:8px}
+.sc-row input{min-height:40px;padding:8px}
+@media (max-width:760px){.sc-row{grid-template-columns:repeat(3,minmax(0,1fr)) 36px}.sc-row>input:first-child{grid-column:1/-1}}
+.sc-cards{display:none;list-style:none;margin:0;padding:0;flex-direction:column;gap:8px}
+.sc-card{background:var(--bg);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:8px;border:2px solid transparent}
+.sc-card.on{border-color:var(--brand-2);background:#F7FAFE}
+.sc-card .row{gap:10px;flex-wrap:nowrap}
+.sc-costs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.sc-costs>div{display:flex;flex-direction:column;background:#fff;border-radius:10px;padding:6px 8px}
+.sc-costs>div.best b{color:var(--ok)}
+.sc-costs b{font-size:14px}
+@media (max-width:760px){.table-wrap{display:none}.sc-cards{display:flex}}
