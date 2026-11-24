@@ -18,7 +18,7 @@
   var SHEETS_SCHEMA = {
     Settings: ['key', 'value', 'updatedAt'],
     ContractorStages: ['id', 'order', 'name', 'pct', 'month', 'plannedDate', 'indexExempt', 'linkedPct', 'notes', 'updatedAt'],
-    PaymentRequests: ['id', 'stageId', 'number', 'receivedDate', 'dueDate', 'baseAmount', 'indexValue', 'indexMonth', 'indexSource', 'indexAdj', 'finalAmount', 'notes', 'updatedAt'],
+    PaymentRequests: ['id', 'stageId', 'number', 'receivedDate', 'dueDate', 'baseAmount', 'indexValue', 'indexMonth', 'indexSource', 'indexAdj', 'finalAmount', 'notes', 'updatedAt', 'contractorAmount'],
     Payments: ['id', 'type', 'stageId', 'requestId', 'expenseId', 'date', 'amount', 'method', 'fundingSource', 'reference', 'notes', 'updatedAt'],
     ExpenseCategories: ['id', 'order', 'name', 'budget', 'updatedAt'],
     Expenses: ['id', 'categoryId', 'name', 'supplier', 'estimate', 'commitment', 'status', 'startDate', 'endDate', 'notes', 'updatedAt'],
@@ -37,7 +37,8 @@
     rootId: null, rootLink: null, sheetId: null, sheetLink: null,
     settingsRows: {}, // key -> {value, row}
     s: {},            // key -> value
-    stages: []        // ContractorStages
+    stages: [],       // ContractorStages
+    requests: [], payments: [], sheetGids: {}
   };
   var tokenClient = null;
   var pendingToken = null;   // {resolve,reject,promise}
@@ -261,6 +262,31 @@
     });
     return replaceRows('ContractorStages', objs).then(loadStages);
   }
+  function loadRequests() { return readRows('PaymentRequests').then(function (r) { state.requests = r.filter(function (x) { return x.id; }); return state.requests; }); }
+  function loadPayments() { return readRows('Payments').then(function (r) { state.payments = r.filter(function (x) { return x.id; }); return state.payments; }); }
+  function upsertRow(name, obj) {
+    var head = SHEETS_SCHEMA[name];
+    var row = head.map(function (h) { return obj[h] == null ? '' : String(obj[h]); });
+    if (obj._row) return api(SHEETS + '/' + state.sheetId + '/values/' + rng(name, 'A' + obj._row) + '?valueInputOption=RAW', { method: 'PUT', body: { values: [row] } });
+    return appendRows(name, [row]);
+  }
+  function loadGids() {
+    return api(SHEETS + '/' + state.sheetId + '?fields=sheets.properties').then(function (ss) {
+      var m = {}; (ss.sheets || []).forEach(function (x) { m[x.properties.title] = x.properties.sheetId; }); state.sheetGids = m; return m;
+    });
+  }
+  function deleteRow(name, rowNum) {
+    if (!rowNum) return Promise.reject(new Error('שורה לא נמצאה'));
+    var p = state.sheetGids[name] != null ? Promise.resolve() : loadGids();
+    return p.then(function () {
+      return api(SHEETS + '/' + state.sheetId + ':batchUpdate', { method: 'POST', body: { requests: [{ deleteDimension: { range: { sheetId: state.sheetGids[name], dimension: 'ROWS', startIndex: rowNum - 1, endIndex: rowNum } } }] } });
+    });
+  }
+  // מוודא שכותרות הגיליונות מעודכנות (עמודות חדשות מתווספות בסוף)
+  function ensureHeaders() {
+    var data = Object.keys(SHEETS_SCHEMA).map(function (n) { return { range: "'" + n + "'!A1", values: [SHEETS_SCHEMA[n]] }; });
+    return api(SHEETS + '/' + state.sheetId + '/values:batchUpdate', { method: 'POST', body: { valueInputOption: 'RAW', data: data } });
+  }
   function logActivity(action, entity, details) {
     if (!state.sheetId) return;
     appendRows('ActivityLog', [[nowIso(), (state.user && state.user.email) || '', action, entity, '', details || '']]).catch(function () { /* לא קריטי */ });
@@ -357,7 +383,7 @@
     state.rootId = proj.root.id; state.rootLink = proj.root.webViewLink;
     state.sheetId = proj.sheet.id; state.sheetLink = proj.sheet.webViewLink;
     loading('טוען נתונים…');
-    return Promise.all([loadSettings(), loadStages()]).then(function () {
+    return ensureHeaders().then(function () { return Promise.all([loadSettings(), loadStages(), loadRequests(), loadPayments()]); }).then(function () {
       show('screen-app');
       renderUser();
       setSync('', 'מחובר');
@@ -389,7 +415,8 @@
     contacts: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>',
     settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/>',
     up: '<path d="m6 15 6-6 6 6"/>', down: '<path d="m6 9 6 6 6-6"/>', trash: '<path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/>',
-    plus: '<path d="M12 5v14M5 12h14"/>', check: '<path d="M20 6 9 17l-5-5"/>'
+    plus: '<path d="M12 5v14M5 12h14"/>', check: '<path d="M20 6 9 17l-5-5"/>',
+    edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/>', right: '<path d="m9 18 6-6-6-6"/>'
   };
   var ROUTES = [
     { id: 'dashboard', title: 'דשבורד', icon: 'home', mobile: true },
@@ -401,7 +428,7 @@
     { id: 'contacts', title: 'אנשי קשר', icon: 'contacts' },
     { id: 'settings', title: 'הגדרות', icon: 'settings', mobile: true }
   ];
-  var HIDDEN_ROUTES = [{ id: 'setup', title: 'הגדרת פרויקט', icon: 'settings' }];
+  var HIDDEN_ROUTES = [{ id: 'setup', title: 'הגדרת פרויקט', icon: 'settings' }, { id: 'stage', title: 'אבן דרך', icon: 'stages', nav: 'contractor' }];
   function icon(name, size) {
     size = size || 20;
     return '<svg viewBox="0 0 24 24" width="' + size + '" height="' + size + '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICONS[name] + '</svg>';
@@ -415,10 +442,13 @@
     }).join('');
   }
   function currentRoute() {
-    var id = (location.hash || '').replace(/^#\//, '');
-    return ROUTES.concat(HIDDEN_ROUTES).filter(function (r) { return r.id === id; })[0] || ROUTES[0];
+    var parts = (location.hash || '').replace(/^#\//, '').split('/');
+    var id = parts[0];
+    var r = ROUTES.concat(HIDDEN_ROUTES).filter(function (x) { return x.id === id; })[0] || ROUTES[0];
+    routeParam = parts.length > 1 ? decodeURIComponent(parts.slice(1).join('/')) : '';
+    return r;
   }
-  var lastRoute = null;
+  var lastRoute = null, routeParam = '';
   function route() {
     if ($('screen-app').hidden) return;
     var r = currentRoute();
@@ -428,12 +458,13 @@
     }
     lastRoute = r.id;
     document.querySelectorAll('[data-route]').forEach(function (a) {
-      if (a.getAttribute('data-route') === r.id) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+      if (a.getAttribute('data-route') === (r.nav || r.id)) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     });
     $('view-title').textContent = r.title;
     $('view-sub').textContent = state.s.projectName || '';
     var view = $('view');
-    view.innerHTML = (VIEWS[r.id] || placeholder)(r);
+    if ($('modal').open) closeModal();
+    view.innerHTML = (VIEWS[r.id] || placeholder)(r, routeParam);
     afterRender(r.id);
     view.focus({ preventScroll: true });
   }
@@ -445,7 +476,7 @@
 
   // ---------- טיוטה (אשף / הגדרות) ----------
   var KEYS = ['projectName', 'address', 'aptNo', 'contractor', 'signDate', 'deliveryDate', 'basePrice', 'track', 'fixSurcharge', 't3Surcharge',
-    'baseIndex', 'baseIndexMonth', 'exemptPct', 'linkedPct', 'indexRule', 'indexFloor'];
+    'baseIndex', 'baseIndexMonth', 'exemptPct', 'linkedPct', 'indexRule', 'indexFloor', 'vatMode', 'vatRate'];
   function makeDraft() {
     var d = {};
     KEYS.forEach(function (k) { d[k] = state.s[k] != null && state.s[k] !== '' ? state.s[k] : (C.DEFAULT_SETTINGS[k] || ''); });
@@ -644,6 +675,10 @@
       '<button type="button" class="btn btn-ghost btn-sm danger-text" data-action="revoke">ביטול הרשאות</button></div>' +
       '<p class="hint">התנתקות יוצאת מהאפליקציה בלבד. ביטול הרשאות מנתק את האפליקציה מחשבון Google שלך. הנתונים ב-Drive נשארים בשני המקרים.</p></section>';
     return (isSetup() ? '' : '<div class="banner"><span>ההגדרה הראשונית לא הושלמה.</span><a class="btn btn-sm btn-primary" href="#/setup">לאשף ההגדרה</a></div>') +
+      '<section class="card" id="sec-display"><h2>תצוגת סכומים</h2><p class="hint">כל הסכומים מוזנים ונשמרים כולל מע״מ. כאן בוחרים רק איך להציג אותם.</p><div class="fields">' +
+      field('vatMode', 'הצגת סכומים', { type: 'select', options: [['incl', 'כולל מע״מ'], ['excl', 'ללא מע״מ']] }) +
+      field('vatRate', 'שיעור מע״מ (%)', { type: 'number', step: 'any', inputmode: 'decimal', min: 0 }) +
+      '</div><div class="row end"><button type="button" class="btn btn-primary" data-action="save-display">שמירה</button></div></section>' +
       '<section class="card" id="sec-project"><h2>פרטי פרויקט</h2><div class="fields">' +
       field('projectName', 'שם הפרויקט') + field('contractor', 'קבלן / חברה יזמית') + field('address', 'כתובת') + field('aptNo', 'מספר דירה') +
       field('signDate', 'תאריך חתימת החוזה', { type: 'date', required: true }) + field('deliveryDate', 'מסירה משוערת', { type: 'date' }) +
@@ -703,14 +738,32 @@
   // ---------- נתונים מחושבים ----------
   function currentSchedule() {
     var s = state.s;
-    var list;
-    if (String(s.track) === '3') {
+    var list, t3 = String(s.track) === '3';
+    if (t3) {
       try { list = JSON.parse(s.t3Schedule || '[]'); } catch (e) { list = []; }
       if (!list.length) list = C.DEFAULT_T3;
     } else list = state.stages;
-    return C.schedule(s, list);
+    var rows = C.schedule(s, list);
+    rows.forEach(function (r, i) { r.stageId = t3 ? 't3-' + i : (list[i].id || 'st-' + i); });
+    return rows;
   }
   function todayIso() { return C.isoDate(new Date()); }
+  function reqsOf(stageId) { return state.requests.filter(function (r) { return r.stageId === stageId; }); }
+  function paysOf(stageId) { return state.payments.filter(function (p) { return p.type === 'contractor' && p.stageId === stageId; }); }
+  // לוח + מצב לכל אבן דרך
+  function ledger() {
+    var today = todayIso();
+    return currentSchedule().map(function (r) {
+      r.st = C.stageStatus(r, reqsOf(r.stageId), paysOf(r.stageId), today);
+      return r;
+    });
+  }
+  function findStage(id) { return ledger().filter(function (r) { return r.stageId === id; })[0]; }
+
+  // ---------- מע״מ ----------
+  function vatExcl() { return state.s.vatMode === 'excl'; }
+  function vatRate() { return C.num(state.s.vatRate, 18) / 100; }
+  function M(n) { return C.fmtMoney(vatExcl() ? n / (1 + vatRate()) : n); }
 
   // ---------- מסכים ----------
   function placeholder(r) {
@@ -721,14 +774,25 @@
   function indexBadge(r) {
     if (r.indexMode === 'none') return '<span class="badge muted-b">ללא מדד</span>';
     if (r.indexMode === 'exempt') return '<span class="badge muted-b">פטור ממדד</span>';
-    if (r.indexMode === 'partial') return '<span class="badge warn">צמוד חלקית · ' + C.fmtMoney(r.linkedBase) + '</span>';
-    return '<span class="badge info">צמוד · ' + C.fmtMoney(r.linkedBase) + '</span>';
+    if (r.indexMode === 'partial') return '<span class="badge muted-b">צמוד חלקית · ' + M(r.linkedBase) + '</span>';
+    return '<span class="badge muted-b">צמוד · ' + M(r.linkedBase) + '</span>';
   }
+  function statusBadge(st) {
+    if (st.overdue && st.status !== 'partial') return '<span class="badge warn">באיחור</span>';
+    var cls = { planned: 'muted-b', requested: 'info', partial: 'warn', paid: 'ok' }[st.status];
+    return '<span class="badge ' + cls + '">' + C.STATUS_LABEL[st.status] + (st.overdue && st.status === 'partial' ? ' · באיחור' : '') + '</span>';
+  }
+  function statusClass(st) { return st.status === 'paid' ? 's-paid' : (st.status === 'partial' || st.overdue ? 's-warn' : (st.status === 'requested' ? 's-req' : '')); }
   function needSetupCard() {
     return '<section class="card"><div class="empty">' + icon('settings', 28) + '<b>עוד לא הוגדר חוזה</b>' +
       '<span>כמה צעדים קצרים: מחיר, מסלול ולוח תשלומים.</span>' +
       '<a class="btn btn-primary" href="#/setup">להגדרת הפרויקט</a></div></section>';
   }
+  function vatNote() { return vatExcl() ? '<span class="badge muted-b">הסכומים מוצגים ללא מע״מ</span>' : ''; }
+  function stat(label, value) { return '<div class="stat"><span class="muted small">' + label + '</span><b>' + value + '</b></div>'; }
+  var METHODS = [['transfer', 'העברה בנקאית'], ['check', 'צ׳ק'], ['card', 'כרטיס אשראי'], ['cash', 'מזומן'], ['other', 'אחר']];
+  function methodLabel(m) { var f = METHODS.filter(function (x) { return x[0] === m; })[0]; return f ? f[1] : (m || ''); }
+  function stageName(id) { var r = currentSchedule().filter(function (x) { return x.stageId === id; })[0]; return r ? r.name : '(אבן דרך שנמחקה)'; }
 
   var VIEWS = {
     setup: function () { return wizardView(); },
@@ -737,34 +801,98 @@
     contractor: function () {
       if (!isSetup()) return needSetupCard();
       var s = state.s;
-      var rows = currentSchedule();
-      var today = todayIso();
+      var rows = ledger();
       var eff = C.effectivePrice(s);
       var head = '<section class="card"><div class="stats">' +
-        stat('מחיר אפקטיבי', C.fmtMoney(eff)) +
+        stat('מחיר אפקטיבי', M(eff)) +
         stat('מסלול', esc(C.TRACKS[s.track] ? C.TRACKS[s.track].name : '—')) +
-        (String(s.track) === '1' ? stat('מדד בסיס', s.baseIndex ? '<span class="num">' + esc(s.baseIndex) + '</span>' + (s.baseIndexMonth ? ' <span class="muted small">(' + esc(s.baseIndexMonth.split('-').reverse().join('/')) + ')</span>' : '') : '<a href="#/settings">להזנה</a>') : stat('תוספת', C.fmtMoney(eff - C.num(s.basePrice)))) +
-        stat('תשלומים', rows.length) +
-        '</div></section>';
+        (String(s.track) === '1' ? stat('מדד בסיס', s.baseIndex ? '<span class="num">' + esc(s.baseIndex) + '</span>' + (s.baseIndexMonth ? ' <span class="muted small">(' + esc(s.baseIndexMonth.split('-').reverse().join('/')) + ')</span>' : '') : '<a href="#/settings">להזנה</a>') : stat('תוספת', M(eff - C.num(s.basePrice)))) +
+        stat('שולם', M(rows.reduce(function (a, r) { return a + r.st.paid; }, 0))) +
+        '</div>' + vatNote() + '</section>';
       var list = rows.map(function (r, i) {
-        var past = r.date && r.date < today;
-        return '<li class="stage' + (past ? ' past' : '') + '">' +
+        return '<li><a class="stage ' + statusClass(r.st) + '" href="#/stage/' + encodeURIComponent(r.stageId) + '">' +
           '<div class="stage-main"><span class="stage-n">' + (i + 1) + '</span><div><b>' + esc(r.name) + '</b>' +
-          '<div class="muted small">' + C.fmtPct(r.pct) + ' · חודש ' + r.month + (r.date ? ' · ' + C.fmtDate(r.date) : '') + '</div></div></div>' +
-          '<div class="stage-side"><b class="num">' + C.fmtMoney(r.base) + '</b>' + indexBadge(r) + '</div></li>';
+          '<div class="muted small">' + C.fmtPct(r.pct) + ' · ' + (r.date ? C.fmtDate(r.date) : 'חודש ' + r.month) + '</div>' +
+          '<div class="badges">' + statusBadge(r.st) + indexBadge(r) + '</div></div></div>' +
+          '<div class="stage-side"><b class="num">' + M(r.st.expected) + '</b>' +
+          (r.st.paid > 0 && r.st.remaining > 0.5 ? '<span class="muted small">יתרה ' + M(r.st.remaining) + '</span>' : '') +
+          (r.st.adj ? '<span class="muted small">כולל הצמדה ' + M(r.st.adj) + '</span>' : '') +
+          '</div></a></li>';
       }).join('');
-      return head + '<section class="card"><div class="row between"><h2>לוח התשלומים</h2><a class="btn btn-ghost btn-sm" href="#/settings">עריכה</a></div>' +
+      return head + '<section class="card"><div class="row between"><h2>לוח התשלומים</h2><a class="btn btn-ghost btn-sm" href="#/settings">עריכת הלוח</a></div>' +
         '<ul class="stages">' + list + '</ul>' +
-        '<p class="hint">הסכומים הם סכומי בסיס. ההצמדה בפועל תחושב לפי דרישות התשלום והמדד (שלב הבא).</p></section>';
+        '<p class="hint">לחיצה על אבן דרך פותחת את הדרישות והתשלומים שלה.</p></section>';
+    },
+
+    stage: function (r, param) {
+      if (!isSetup()) return needSetupCard();
+      var row = findStage(param);
+      if (!row) return '<section class="card"><div class="empty"><b>אבן הדרך לא נמצאה</b><a class="btn btn-secondary" href="#/contractor">חזרה ללוח</a></div></section>';
+      var st = row.st;
+      var reqs = reqsOf(row.stageId), pays = paysOf(row.stageId);
+      var t1 = String(state.s.track) === '1';
+      var reqList = reqs.length ? reqs.map(function (q) {
+        var diff = q.contractorAmount !== '' && Math.abs(C.num(q.contractorAmount) - C.num(q.finalAmount)) >= 1;
+        return '<li class="item"><div><b>דרישה' + (q.number ? ' ' + esc(q.number) : '') + '</b> · <span class="muted small">' + C.fmtDate(q.receivedDate) + '</span>' +
+          (t1 && q.indexValue ? '<div class="muted small">מדד ' + esc(q.indexValue) + (q.indexMonth ? ' (' + esc(q.indexMonth.split('-').reverse().join('/')) + ')' : '') + (q.indexSource === 'manual' ? ' · ידני' : '') + ' · הצמדה ' + M(C.num(q.indexAdj)) + '</div>' : '') +
+          (t1 && !q.indexValue && C.num(q.baseAmount) && row.linkedBase ? '<div class="muted small">טרם הוזן מדד</div>' : '') +
+          (diff ? '<div class="warn-text small">בדרישת הקבלן: ' + M(C.num(q.contractorAmount)) + ' · הפרש ' + M(C.num(q.contractorAmount) - C.num(q.finalAmount)) + '</div>' : '') +
+          '</div><div class="item-side"><b class="num">' + M(C.num(q.finalAmount)) + '</b><span class="tools">' +
+          '<button type="button" class="icon-btn" data-action="edit-req" data-id="' + esc(q.id) + '" aria-label="עריכת דרישה">' + icon('edit', 18) + '</button>' +
+          '<button type="button" class="icon-btn danger" data-action="del-req" data-id="' + esc(q.id) + '" aria-label="מחיקת דרישה">' + icon('trash', 18) + '</button></span></div></li>';
+      }).join('') : '<li class="muted small">עדיין לא הוזנה דרישה.</li>';
+      var payList = pays.length ? pays.map(function (p) {
+        return '<li class="item"><div><b>' + C.fmtDate(p.date) + '</b> · <span class="muted small">' + esc(methodLabel(p.method)) + (p.fundingSource ? ' · ' + esc(p.fundingSource) : '') + '</span>' +
+          (p.reference ? '<div class="muted small">אסמכתא ' + esc(p.reference) + '</div>' : '') + '</div>' +
+          '<div class="item-side"><b class="num">' + M(C.num(p.amount)) + '</b><span class="tools">' +
+          '<button type="button" class="icon-btn" data-action="edit-pay" data-id="' + esc(p.id) + '" aria-label="עריכת תשלום">' + icon('edit', 18) + '</button>' +
+          '<button type="button" class="icon-btn danger" data-action="del-pay" data-id="' + esc(p.id) + '" aria-label="מחיקת תשלום">' + icon('trash', 18) + '</button></span></div></li>';
+      }).join('') : '<li class="muted small">עדיין לא נרשם תשלום.</li>';
+      $('view-title').textContent = row.name;
+      return '<a class="back" href="#/contractor">' + icon('right', 18) + 'לוח התשלומים</a>' +
+        '<section class="card"><div class="row between"><div class="muted small">' + C.fmtPct(row.pct) + ' מהחוזה · ' + (row.date ? 'צפוי ב-' + C.fmtDate(row.date) : '') + '</div>' + statusBadge(st) + '</div>' +
+        '<div class="stats">' + stat('סכום בסיס', M(row.base)) +
+        (t1 ? stat('חלק צמוד', row.linkedBase ? M(row.linkedBase) : 'פטור') : '') +
+        stat('סכום צפוי', M(st.expected)) + stat('שולם', M(st.paid)) + stat('יתרה', M(Math.max(0, st.remaining))) + '</div>' + vatNote() +
+        '<div class="row"><button type="button" class="btn btn-primary" data-action="new-req" data-stage="' + esc(row.stageId) + '">דרישת תשלום</button>' +
+        '<button type="button" class="btn btn-secondary" data-action="new-pay" data-stage="' + esc(row.stageId) + '">רישום תשלום</button></div></section>' +
+        '<section class="card"><h2>דרישות תשלום</h2><ul class="items">' + reqList + '</ul></section>' +
+        '<section class="card"><h2>תשלומים</h2><ul class="items">' + payList + '</ul></section>';
+    },
+
+    payments: function () {
+      if (!isSetup()) return needSetupCard();
+      var rows = ledger();
+      var pays = state.payments.filter(function (p) { return p.type === 'contractor'; }).slice().sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+      var total = pays.reduce(function (a, p) { return a + C.num(p.amount); }, 0);
+      var open = rows.filter(function (r) { return (r.st.status === 'requested' || r.st.status === 'partial'); });
+      var openList = open.length ? open.map(function (r) {
+        return '<li><a class="item link" href="#/stage/' + encodeURIComponent(r.stageId) + '"><div><b>' + esc(r.name) + '</b><div class="badges">' + statusBadge(r.st) + '</div></div>' +
+          '<div class="item-side"><span class="muted small">לתשלום</span><b class="num">' + M(r.st.remaining) + '</b></div></a></li>';
+      }).join('') : '<li class="muted small">אין דרישות פתוחות.</li>';
+      var list = pays.length ? pays.map(function (p) {
+        return '<li><a class="item link" href="#/stage/' + encodeURIComponent(p.stageId) + '"><div><b>' + esc(stageName(p.stageId)) + '</b>' +
+          '<div class="muted small">' + C.fmtDate(p.date) + ' · ' + esc(methodLabel(p.method)) + (p.fundingSource ? ' · ' + esc(p.fundingSource) : '') + '</div></div>' +
+          '<div class="item-side"><b class="num">' + M(C.num(p.amount)) + '</b></div></a></li>';
+      }).join('') : '<li class="muted small">עדיין לא נרשמו תשלומים.</li>';
+      return '<section class="card"><div class="stats">' + stat('שולם לקבלן', M(total)) + stat('מספר תשלומים', pays.length) + stat('דרישות פתוחות', open.length) + '</div>' + vatNote() +
+        '<div class="row"><button type="button" class="btn btn-primary" data-action="new-pay">רישום תשלום</button>' +
+        '<button type="button" class="btn btn-secondary" data-action="new-req">דרישת תשלום</button></div></section>' +
+        '<section class="card"><h2>דרישות פתוחות</h2><ul class="items">' + openList + '</ul></section>' +
+        '<section class="card"><h2>תשלומים לקבלן</h2><ul class="items">' + list + '</ul></section>';
     },
 
     dashboard: function () {
       if (!isSetup()) return needSetupCard();
       var s = state.s;
-      var rows = currentSchedule();
+      var rows = ledger();
+      var commitment = rows.reduce(function (a, r) { return a + r.st.expected; }, 0);
+      var paid = rows.reduce(function (a, r) { return a + r.st.paid; }, 0);
+      var adj = rows.reduce(function (a, r) { return a + r.st.adj; }, 0);
       var eff = C.effectivePrice(s);
-      var today = todayIso();
-      var next = rows.filter(function (r) { return r.date && r.date >= today; })[0];
+      var next = rows.filter(function (r) { return r.st.status !== 'paid'; })[0];
+      var overdue = rows.filter(function (r) { return r.st.overdue; });
+      var openReqs = rows.filter(function (r) { return r.st.status === 'requested' || r.st.status === 'partial'; });
       var sign = C.parseDate(s.signDate);
       var deliv = C.parseDate(s.deliveryDate) || (rows.length && rows[rows.length - 1].date ? C.parseDate(rows[rows.length - 1].date) : null);
       var timeline = '';
@@ -778,27 +906,205 @@
           '<div class="bar"><div style="width:' + pct.toFixed(1) + '%;background:var(--accent)"></div></div>' +
           '<div class="muted small">חלפו ' + Math.min(monthsDone, monthsTotal) + ' חודשים מתוך ' + monthsTotal + ' · ' + Math.round(pct) + '% מהזמן</div></section>';
       }
-      var hero = '<section class="card hero"><div class="row between"><span class="muted">התחייבות לקבלן (לפני הצמדה)</span><span class="badge info">' + esc(C.TRACKS[s.track].short) + '</span></div>' +
-        '<div class="hero-num num">' + C.fmtMoney(eff) + '</div>' +
-        '<div class="bar"><div style="width:0%"></div></div>' +
-        '<div class="stats">' + stat('שולם בפועל', C.fmtMoney(0)) + stat('יתרה לתשלום', C.fmtMoney(eff)) +
-        stat(String(s.track) === '1' ? 'חלק צמוד בסה״כ' : 'תוספת חוזית', C.fmtMoney(String(s.track) === '1' ? rows.reduce(function (a, r) { return a + r.linkedBase; }, 0) : eff - C.num(s.basePrice))) + '</div>' +
-        '<p class="hint">רישום תשלומים ודרישות ייפתח בשלב הבא.</p></section>';
-      var nextCard = next ? '<section class="card"><div class="row between"><h2>התשלום הבא</h2><span class="badge muted-b">מתוכנן</span></div>' +
-        '<div><b style="font-size:18px">' + esc(next.name) + '</b><div class="muted small">צפוי ב-' + C.fmtDate(next.date) + ' · חודש ' + next.month + ' לפרויקט</div></div>' +
-        kv('סכום בסיס', '<b class="num">' + C.fmtMoney(next.base) + '</b>') + kv('הצמדה', indexBadge(next)) + '</section>' : '';
-      return '<div class="grid">' + hero + nextCard + '</div>' + timeline;
+      var paidPct = commitment > 0 ? Math.min(100, paid / commitment * 100) : 0;
+      var t1 = String(s.track) === '1';
+      var hero = '<section class="card hero"><div class="row between"><span class="muted">התחייבות לקבלן</span><span class="badge info">' + esc(C.TRACKS[s.track].short) + '</span></div>' +
+        '<div class="hero-num num">' + M(commitment) + '</div>' +
+        '<div class="bar" role="img" aria-label="שולם ' + Math.round(paidPct) + ' אחוז"><div style="width:' + paidPct.toFixed(1) + '%"></div></div>' +
+        '<div class="muted small">' + Math.round(paidPct) + '% שולם</div>' +
+        '<div class="stats">' + stat('שולם בפועל', M(paid)) + stat('יתרה לתשלום', M(commitment - paid)) +
+        (t1 ? stat('הצמדה עד כה', M(adj)) : stat('תוספת חוזית', M(eff - C.num(s.basePrice)))) + '</div>' +
+        (t1 ? '<p class="hint">ההתחייבות כוללת הצמדה לפי הדרישות שהוזנו. הצמדה משוערת לתשלומים עתידיים תתווסף עם שירות המדד.</p>' : '') + vatNote() + '</section>';
+      var nextCard = next ? '<section class="card"><div class="row between"><h2>התשלום הבא</h2>' + statusBadge(next.st) + '</div>' +
+        '<div><b style="font-size:18px">' + esc(next.name) + '</b><div class="muted small">' + (next.date ? 'צפוי ב-' + C.fmtDate(next.date) + ' · ' : '') + 'חודש ' + next.month + ' לפרויקט</div></div>' +
+        kv('סכום בסיס', '<b class="num">' + M(next.base) + '</b>') +
+        (next.st.adj ? kv('הצמדה לפי דרישה', '<b class="num">' + M(next.st.adj) + '</b>') : kv('הצמדה', indexBadge(next))) +
+        kv('נותר לתשלום', '<b class="num">' + M(next.st.remaining) + '</b>') +
+        '<div class="row"><a class="btn btn-secondary btn-sm" href="#/stage/' + encodeURIComponent(next.stageId) + '">לפרטים</a></div></section>' :
+        '<section class="card"><div class="empty">' + icon('check', 28) + '<b>כל התשלומים לקבלן שולמו</b></div></section>';
+      var alerts = [];
+      overdue.forEach(function (r) { alerts.push('<li><a href="#/stage/' + encodeURIComponent(r.stageId) + '"><span class="badge warn">באיחור</span> ' + esc(r.name) + ' · צפוי היה ב-' + C.fmtDate(r.date) + '</a></li>'); });
+      openReqs.filter(function (r) { return !r.st.overdue; }).forEach(function (r) { alerts.push('<li><a href="#/stage/' + encodeURIComponent(r.stageId) + '"><span class="badge info">דרישה פתוחה</span> ' + esc(r.name) + ' · ' + M(r.st.remaining) + '</a></li>'); });
+      if (t1 && !s.baseIndex) alerts.push('<li><a href="#/settings"><span class="badge warn">חסר</span> מדד הבסיס לא הוזן</a></li>');
+      var alertCard = alerts.length ? '<section class="card"><h2>התראות</h2><ul class="alerts">' + alerts.join('') + '</ul></section>' : '';
+      return '<div class="grid">' + hero + nextCard + '</div>' + alertCard + timeline;
     }
   };
-  function stat(label, value) { return '<div class="stat"><span class="muted small">' + label + '</span><b>' + value + '</b></div>'; }
 
   function afterRender(id) {
     if (id === 'setup' || id === 'settings') updateEditorSummary();
   }
 
+  // ---------- טפסי דרישה ותשלום (חלון) ----------
+  var form = null; // {kind:'req'|'pay', data:{...}}
+  function openModal(title, html) {
+    var d = $('modal');
+    $('modal-title').textContent = title;
+    $('modal-body').innerHTML = html;
+    if (typeof d.showModal === 'function') { if (!d.open) d.showModal(); } else d.setAttribute('open', '');
+    var first = d.querySelector('input,select'); if (first) first.focus();
+  }
+  function closeModal() { var d = $('modal'); if (d.open) { if (d.close) d.close(); else d.removeAttribute('open'); } form = null; }
+  function ff(key, label, opts) {
+    opts = opts || {};
+    var v = form.data[key] == null ? '' : form.data[key];
+    var id = 'm-' + key;
+    var req = opts.required ? ' <span class="req" aria-hidden="true">*</span>' : '';
+    var input;
+    if (opts.type === 'select') {
+      input = '<select id="' + id + '" data-mf="' + key + '">' + opts.options.map(function (o) {
+        return '<option value="' + esc(o[0]) + '"' + (String(v) === String(o[0]) ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
+      }).join('') + '</select>';
+    } else {
+      input = '<input id="' + id + '" data-mf="' + key + '" type="' + (opts.type || 'text') + '" value="' + esc(v) + '"' +
+        (opts.inputmode ? ' inputmode="' + opts.inputmode + '"' : '') + (opts.step ? ' step="' + opts.step + '"' : '') +
+        (opts.list ? ' list="' + opts.list + '"' : '') + (opts.placeholder ? ' placeholder="' + esc(opts.placeholder) + '"' : '') +
+        (opts.required ? ' required aria-required="true"' : '') + '>';
+    }
+    return '<div class="field' + (opts.wide ? ' wide' : '') + '"><label for="' + id + '">' + label + req + '</label>' + input +
+      (opts.hint ? '<div class="hint" id="mh-' + key + '">' + opts.hint + '</div>' : '') + '</div>';
+  }
+  function stageOptions() { return ledger().map(function (r, i) { return [r.stageId, (i + 1) + '. ' + r.name]; }); }
+
+  function openRequest(stageId, reqId) {
+    var rows = ledger();
+    var existing = reqId ? state.requests.filter(function (q) { return q.id === reqId; })[0] : null;
+    var sid = existing ? existing.stageId : (stageId || ((rows.filter(function (r) { return r.st.status !== 'paid'; })[0] || rows[0]) || {}).stageId);
+    form = { kind: 'req', data: existing ? clone(existing) : { stageId: sid, number: '', receivedDate: todayIso(), dueDate: '', baseAmount: '', indexValue: '', indexMonth: '', contractorAmount: '', notes: '' } };
+    if (!existing) form.data.baseAmount = defaultReqBase(sid);
+    renderRequestForm(existing ? 'עריכת דרישת תשלום' : 'דרישת תשלום חדשה');
+  }
+  function defaultReqBase(sid) {
+    var row = findStage(sid); if (!row) return '';
+    var used = reqsOf(sid).reduce(function (a, q) { return a + C.num(q.baseAmount); }, 0);
+    return String(C.round2(Math.max(0, row.base - used)));
+  }
+  function renderRequestForm(title) {
+    var t1 = String(state.s.track) === '1';
+    var html = '<div class="fields">' +
+      ff('stageId', 'אבן דרך', { type: 'select', options: stageOptions(), required: true, wide: true }) +
+      ff('receivedDate', 'תאריך הדרישה', { type: 'date', required: true }) +
+      ff('dueDate', 'לתשלום עד', { type: 'date' }) +
+      ff('number', 'מספר דרישה') +
+      ff('baseAmount', 'סכום בסיס (₪, כולל מע״מ)', { type: 'number', step: 'any', inputmode: 'decimal', required: true, hint: 'ברירת המחדל: יתרת הבסיס של אבן הדרך.' }) +
+      (t1 ? ff('indexValue', 'מדד קובע', { type: 'number', step: 'any', inputmode: 'decimal', hint: 'המדד הידוע ב' + (state.s.indexRule === 'payment' ? 'מועד התשלום' : 'מועד הדרישה') + ', כפי שמופיע בדרישה. מדד בסיס: ' + esc(state.s.baseIndex || 'לא הוזן') + '.' }) +
+        ff('indexMonth', 'חודש המדד', { type: 'month' }) : '') +
+      ff('contractorAmount', 'הסכום בדרישת הקבלן (לבדיקה)', { type: 'number', step: 'any', inputmode: 'decimal', hint: 'אופציונלי. אם יש הפרש מהחישוב — תוצג התראה.' }) +
+      ff('notes', 'הערות', { wide: true }) +
+      '</div><div class="calc-box" id="req-calc"></div><div class="error-box" id="m-err" hidden></div>' +
+      '<div class="modal-actions"><button type="button" class="btn btn-ghost" data-action="modal-close">ביטול</button><button type="button" class="btn btn-primary" data-action="save-req">שמירה</button></div>';
+    openModal(title, html);
+    updateRequestCalc();
+  }
+  function updateRequestCalc() {
+    if (!form || form.kind !== 'req') return;
+    var d = form.data, row = findStage(d.stageId), box = $('req-calc');
+    if (!row || !box) return;
+    var c = C.requestCalc(state.s, row, d.baseAmount, d.indexValue);
+    var t1 = String(state.s.track) === '1';
+    var lines = kv('סכום בסיס', M(c.base));
+    if (t1) {
+      lines += kv('חלק צמוד', c.linked ? M(c.linked) : 'פטור ממדד');
+      if (c.linked) lines += kv('שינוי במדד', c.rate == null ? '—' : (c.rate * 100).toFixed(2) + '%') + kv('הצמדה', M(c.adj));
+    }
+    lines += '<div class="kv total"><span class="k">סה״כ לתשלום</span><b class="num">' + M(c.final) + '</b></div>';
+    if (d.contractorAmount !== '' && Math.abs(C.num(d.contractorAmount) - c.final) >= 1) lines += '<div class="warn-text small">הפרש מדרישת הקבלן: ' + M(C.num(d.contractorAmount) - c.final) + '</div>';
+    box.innerHTML = lines;
+  }
+  function saveRequest(btn) {
+    var d = form.data, errs = [];
+    var row = findStage(d.stageId);
+    if (!row) errs.push('יש לבחור אבן דרך');
+    if (!d.receivedDate) errs.push('יש להזין תאריך דרישה');
+    if (!(C.num(d.baseAmount) > 0)) errs.push('יש להזין סכום בסיס');
+    if (d.indexValue !== '' && !(C.num(d.indexValue) > 0)) errs.push('המדד לא תקין');
+    showErrors('m-err', errs); if (errs.length) return;
+    var c = C.requestCalc(state.s, row, d.baseAmount, d.indexValue);
+    var obj = {
+      id: d.id || uid(), stageId: d.stageId, number: d.number, receivedDate: d.receivedDate, dueDate: d.dueDate,
+      baseAmount: c.base, indexValue: d.indexValue, indexMonth: d.indexMonth, indexSource: d.indexValue ? 'manual' : '',
+      indexAdj: c.adj, finalAmount: c.final, notes: d.notes, updatedAt: nowIso(), contractorAmount: d.contractorAmount, _row: d._row
+    };
+    btn.disabled = true;
+    withSync(upsertRow('PaymentRequests', obj).then(loadRequests), 'הדרישה נשמרה').then(function () {
+      logActivity(d.id ? 'update' : 'create', 'PaymentRequests', stageName(obj.stageId) + ' ' + obj.finalAmount);
+      closeModal(); rerender();
+    }).catch(handleError).then(function () { btn.disabled = false; });
+  }
+
+  function openPayment(stageId, payId) {
+    var rows = ledger();
+    var existing = payId ? state.payments.filter(function (p) { return p.id === payId; })[0] : null;
+    var sid = existing ? existing.stageId : (stageId || ((rows.filter(function (r) { return r.st.status !== 'paid'; })[0] || rows[0]) || {}).stageId);
+    form = { kind: 'pay', data: existing ? clone(existing) : { type: 'contractor', stageId: sid, requestId: '', date: todayIso(), amount: '', method: 'transfer', fundingSource: '', reference: '', notes: '' } };
+    if (!existing) {
+      var open = reqsOf(sid);
+      if (open.length) form.data.requestId = open[open.length - 1].id;
+      var row = findStage(sid); if (row && row.st.remaining > 0) form.data.amount = String(C.round2(row.st.remaining));
+    }
+    renderPaymentForm(existing ? 'עריכת תשלום' : 'רישום תשלום לקבלן');
+  }
+  function renderPaymentForm(title) {
+    var reqOpts = [['', 'ללא שיוך לדרישה']].concat(reqsOf(form.data.stageId).map(function (q) {
+      return [q.id, 'דרישה' + (q.number ? ' ' + q.number : '') + ' · ' + C.fmtDate(q.receivedDate) + ' · ' + C.fmtMoney(C.num(q.finalAmount))];
+    }));
+    var row = findStage(form.data.stageId);
+    var html = '<div class="fields">' +
+      ff('stageId', 'אבן דרך', { type: 'select', options: stageOptions(), required: true, wide: true }) +
+      ff('requestId', 'שיוך לדרישה', { type: 'select', options: reqOpts }) +
+      ff('date', 'תאריך התשלום', { type: 'date', required: true }) +
+      ff('amount', 'סכום ששולם (₪, כולל מע״מ)', { type: 'number', step: 'any', inputmode: 'decimal', required: true, hint: row ? 'יתרה באבן הדרך: ' + C.fmtMoney(Math.max(0, row.st.remaining)) : '' }) +
+      ff('method', 'אמצעי תשלום', { type: 'select', options: METHODS }) +
+      ff('fundingSource', 'מקור מימון', { list: 'funding-list', placeholder: 'הון עצמי / משכנתא…' }) +
+      ff('reference', 'אסמכתא') +
+      ff('notes', 'הערות', { wide: true }) +
+      '</div><datalist id="funding-list"><option value="הון עצמי"><option value="משכנתא"><option value="הלוואה"></datalist>' +
+      '<div class="error-box" id="m-err" hidden></div>' +
+      '<div class="modal-actions"><button type="button" class="btn btn-ghost" data-action="modal-close">ביטול</button><button type="button" class="btn btn-primary" data-action="save-pay">שמירה</button></div>';
+    openModal(title, html);
+  }
+  function savePayment(btn) {
+    var d = form.data, errs = [];
+    if (!findStage(d.stageId)) errs.push('יש לבחור אבן דרך');
+    if (!d.date) errs.push('יש להזין תאריך תשלום');
+    if (!(C.num(d.amount) > 0)) errs.push('יש להזין סכום');
+    showErrors('m-err', errs); if (errs.length) return;
+    var obj = { id: d.id || uid(), type: 'contractor', stageId: d.stageId, requestId: d.requestId, expenseId: '', date: d.date, amount: C.round2(C.num(d.amount)),
+      method: d.method, fundingSource: d.fundingSource, reference: d.reference, notes: d.notes, updatedAt: nowIso(), _row: d._row };
+    btn.disabled = true;
+    withSync(upsertRow('Payments', obj).then(loadPayments), 'התשלום נשמר').then(function () {
+      logActivity(d.id ? 'update' : 'create', 'Payments', stageName(obj.stageId) + ' ' + obj.amount);
+      closeModal(); rerender();
+    }).catch(handleError).then(function () { btn.disabled = false; });
+  }
+  function deleteRequest(id) {
+    var q = state.requests.filter(function (x) { return x.id === id; })[0]; if (!q) return;
+    if (state.payments.some(function (p) { return p.requestId === id; })) { toast('יש תשלומים ששויכו לדרישה הזו. יש לערוך או למחוק אותם קודם.', 'err'); return; }
+    if (!confirm('למחוק את הדרישה?')) return;
+    withSync(deleteRow('PaymentRequests', q._row).then(loadRequests), 'הדרישה נמחקה').then(function () { logActivity('delete', 'PaymentRequests', id); rerender(); }).catch(handleError);
+  }
+  function deletePayment(id) {
+    var p = state.payments.filter(function (x) { return x.id === id; })[0]; if (!p) return;
+    if (!confirm('למחוק את התשלום על סך ' + C.fmtMoney(C.num(p.amount)) + '?')) return;
+    withSync(deleteRow('Payments', p._row).then(loadPayments), 'התשלום נמחק').then(function () { logActivity('delete', 'Payments', id); rerender(); }).catch(handleError);
+  }
+  function onModalInput(t) {
+    var k = t.getAttribute('data-mf');
+    form.data[k] = t.value;
+    if (form.kind === 'req') {
+      if (k === 'stageId' && !form.data.id) { form.data.baseAmount = defaultReqBase(t.value); var b = $('m-baseAmount'); if (b) b.value = form.data.baseAmount; }
+      updateRequestCalc();
+    } else if (form.kind === 'pay' && k === 'stageId') {
+      form.data.requestId = ''; var row = findStage(t.value);
+      form.data.amount = row && row.st.remaining > 0 ? String(C.round2(row.st.remaining)) : '';
+      var keep = clone(form.data); renderPaymentForm($('modal-title').textContent); form.data = keep;
+    }
+  }
+
   // ---------- אירועים ----------
   function onInput(e) {
     var t = e.target;
+    if (t.hasAttribute('data-mf')) { if (form) onModalInput(t); return; }
     if (!draft) return;
     if (t.hasAttribute('data-k')) {
       var k = t.getAttribute('data-k');
@@ -864,6 +1170,22 @@
       case 'save-project': saveProject(btn); return;
       case 'save-contract': saveContract(btn); return;
       case 'save-stages': saveStagesAction(btn); return;
+      case 'new-req': openRequest(btn.getAttribute('data-stage')); return;
+      case 'edit-req': openRequest(null, btn.getAttribute('data-id')); return;
+      case 'del-req': deleteRequest(btn.getAttribute('data-id')); return;
+      case 'save-req': saveRequest(btn); return;
+      case 'new-pay': openPayment(btn.getAttribute('data-stage')); return;
+      case 'edit-pay': openPayment(null, btn.getAttribute('data-id')); return;
+      case 'del-pay': deletePayment(btn.getAttribute('data-id')); return;
+      case 'save-pay': savePayment(btn); return;
+      case 'modal-close': closeModal(); return;
+      case 'save-display': {
+        var r = C.num(draft.vatRate, -1);
+        if (r < 0 || r > 50) { toast('שיעור מע״מ לא תקין', 'err'); return; }
+        btn.disabled = true;
+        withSync(saveSettings({ vatMode: draft.vatMode, vatRate: draft.vatRate }), 'הגדרות התצוגה נשמרו').catch(handleError).then(function () { btn.disabled = false; });
+        return;
+      }
     }
   }
   function focusLast() {

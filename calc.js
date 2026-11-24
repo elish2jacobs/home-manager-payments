@@ -29,6 +29,7 @@
   ];
 
   var DEFAULT_SETTINGS = {
+    vatMode: 'incl', vatRate: '18',
     track: '1', exemptPct: '20', linkedPct: '50', fixSurcharge: '4', t3Surcharge: '7',
     indexRule: 'request', indexFloor: 'true'
   };
@@ -134,11 +135,53 @@
     return round2((stages || []).reduce(function (a, st) { return a + num(st.pct); }, 0));
   }
 
+
+  /**
+   * חישוב דרישת תשלום (מסלול 1).
+   * row: שורת לוח מ-schedule; reqBase: סכום הבסיס של הדרישה; idx: המדד הקובע
+   * החלק הצמוד של הדרישה יחסי לחלקה מסכום הבסיס של אבן הדרך.
+   */
+  function requestCalc(s, row, reqBase, idx) {
+    reqBase = num(reqBase);
+    var res = { base: round2(reqBase), linked: 0, rate: null, adj: 0, final: round2(reqBase) };
+    if (String(s.track || '1') !== '1' || !row || !(row.base > 0)) return res;
+    res.linked = round2(row.linkedBase * (reqBase / row.base));
+    var bi = num(s.baseIndex), ci = num(idx);
+    if (!(bi > 0) || !(ci > 0)) { res.rate = null; return res; }
+    var rate = ci / bi - 1;
+    if (String(s.indexFloor) !== 'false' && rate < 0) rate = 0;
+    res.rate = rate;
+    res.adj = round2(res.linked * rate);
+    res.final = round2(res.base + res.adj);
+    return res;
+  }
+
+  /**
+   * מצב אבן דרך לפי דרישות ותשלומים.
+   * מחזיר: expected (סכום צפוי), requested, paid, remaining, status, overdue
+   */
+  function stageStatus(row, reqs, pays, today) {
+    var reqBase = 0, reqFinal = 0, adj = 0;
+    reqs.forEach(function (r) { reqBase += num(r.baseAmount); reqFinal += num(r.finalAmount); adj += num(r.indexAdj); });
+    var paid = pays.reduce(function (a, p) { return a + num(p.amount); }, 0);
+    var notRequested = Math.max(0, row.base - reqBase);
+    var expected = round2(reqFinal + notRequested);
+    var remaining = round2(expected - paid);
+    var status;
+    if (paid > 0 && remaining <= 0.5) status = 'paid';
+    else if (paid > 0) status = 'partial';
+    else if (reqs.length) status = 'requested';
+    else status = 'planned';
+    var overdue = status !== 'paid' && !!row.date && !!today && row.date < today;
+    return { expected: expected, requested: round2(reqFinal), adj: round2(adj), paid: round2(paid), remaining: remaining, status: status, overdue: overdue };
+  }
+  var STATUS_LABEL = { planned: 'מתוכנן', requested: 'התקבלה דרישה', partial: 'שולם חלקית', paid: 'שולם' };
+
   var api = {
     TRACKS: TRACKS, DEFAULT_STAGES: DEFAULT_STAGES, DEFAULT_T3: DEFAULT_T3, DEFAULT_SETTINGS: DEFAULT_SETTINGS,
     num: num, round2: round2, parseDate: parseDate, isoDate: isoDate, addMonths: addMonths,
     fmtDate: fmtDate, fmtMoney: fmtMoney, fmtPct: fmtPct,
-    effectivePrice: effectivePrice, schedule: schedule, validateStages: validateStages, sumPct: sumPct
+    effectivePrice: effectivePrice, schedule: schedule, requestCalc: requestCalc, stageStatus: stageStatus, STATUS_LABEL: STATUS_LABEL, validateStages: validateStages, sumPct: sumPct
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.HMCalc = api;
 })(this);
