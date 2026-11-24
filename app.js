@@ -296,16 +296,22 @@
     return f ? f.v : null;
   }
   function cbsLatest() { return state.cbs ? state.cbs.series[state.cbs.series.length - 1] : null; }
-  // המדד הידוע בתאריך: {y,m,v|null}
+  // מקדם המרה מבסיס הלמ״ס הנוכחי לבסיס שבחוזה: מדד הבסיס בחוזה ÷ ערך הלמ״ס לחודש הבסיס
+  function contractFactor(s) {
+    s = s || state.s;
+    var ym = C.ymKey(s.baseIndexMonth), bi = C.num(s.baseIndex);
+    if (!ym || !(bi > 0)) return null;
+    var raw = cbsValue(ym.y, ym.m);
+    return raw ? bi / raw : null;
+  }
+  function toContract(raw, s) { var f = contractFactor(s); return f && raw != null ? Math.round(raw * f * 10000) / 10000 : null; }
+  // המדד הידוע בתאריך: {y,m,raw,v} — v בבסיס החוזה (או null אם אין מקדם)
   function knownIndexAt(dateIso) {
     var km = C.knownMonthFor(dateIso); if (!km) return null;
-    var v = cbsValue(km.y, km.m);
-    if (v == null) {
-      // אם המדד של החודש עוד לא במאגר אבל התאריך בעבר הרחוק — לוקחים את האחרון שקדם לו
-      var lat = cbsLatest();
-      if (lat && (lat.y * 100 + lat.m) < (km.y * 100 + km.m)) return { y: km.y, m: km.m, v: null, pending: true };
-    }
-    return { y: km.y, m: km.m, v: v };
+    var raw = cbsValue(km.y, km.m);
+    if (raw != null) return { y: km.y, m: km.m, raw: raw, v: toContract(raw) };
+    var v = null;
+    return { y: km.y, m: km.m, raw: null, v: v, pending: true };
   }
   // העתקת מדדים חדשים לגיליון IndexHistory של המשתמש (ברקע)
   function syncIndexHistory() {
@@ -577,9 +583,12 @@
     var ym = C.ymKey(draft.baseIndexMonth); if (!ym) return '';
     var v = cbsValue(ym.y, ym.m);
     if (v == null) return 'אין נתון בלמ״ס לחודש הזה.';
-    var out = 'לפי הלמ״ס: ' + v + (state.cbs.base ? ' (בסיס ' + esc(state.cbs.base) + ')' : '') + '.';
+    var out = 'בלמ״ס: ' + v + (state.cbs.base ? ' (בסיס ' + esc(state.cbs.base) + ')' : '') + '.';
     var bi = C.num(draft.baseIndex);
-    if (bi > 0 && Math.abs(bi / v - 1) > 0.02) out += ' <span class="warn-text">שים לב: המדד שהזנת שונה מהותית — ייתכן שבחוזה מדובר בבסיס אחר. החישוב תמיד לפי המספר שבחוזה.</span>';
+    if (bi > 0) {
+      var f = bi / v;
+      out += Math.abs(f - 1) < 0.0005 ? ' החוזה באותו בסיס.' : ' מקדם המרה לבסיס החוזה: ' + f.toFixed(5) + '. מדדים מהלמ״ס יומרו אוטומטית.';
+    }
     return out;
   }
   function stageEditor() {
@@ -768,8 +777,31 @@
     btn.disabled = true;
     var o = {};
     ['basePrice', 'track', 'fixSurcharge', 't3Surcharge', 'baseIndex', 'baseIndexMonth', 'exemptPct', 'linkedPct', 'indexRule', 'indexFloor'].forEach(function (k) { o[k] = draft[k]; });
-    withSync(saveSettings(o), 'החוזה נשמר').then(function () { logActivity('update', 'Settings', 'contract track=' + draft.track); })
+    withSync(saveSettings(o), 'החוזה נשמר').then(function () { logActivity('update', 'Settings', 'contract track=' + draft.track); return recalcRequests(); })
       .catch(handleError).then(function () { btn.disabled = false; });
+  }
+  // אחרי שינוי בחוזה/בלוח: חישוב מחדש של דרישות קיימות (תשלומים בפועל לא משתנים)
+  function recalcRequests() {
+    if (!state.requests.length) return Promise.resolve();
+    var changes = [];
+    state.requests.forEach(function (q) {
+      var row = findStage(q.stageId); if (!row) return;
+      var idx = q.indexValue, src = q.indexSource;
+      if (src === 'cbs') { var k = knownIndexAt(q.receivedDate); if (k && k.v != null) idx = String(k.v); }
+      var c = C.requestCalc(state.s, row, q.baseAmount, idx);
+      if (String(idx) !== String(q.indexValue) || Math.abs(c.adj - C.num(q.indexAdj)) >= 0.01 || Math.abs(c.final - C.num(q.finalAmount)) >= 0.01) {
+        var n = clone(q); n._row = q._row; n.indexValue = idx; n.indexAdj = c.adj; n.finalAmount = c.final; n.updatedAt = nowIso();
+        changes.push({ q: q, n: n });
+      }
+    });
+    if (!changes.length) return Promise.resolve();
+    var diff = changes.reduce(function (a, x) { return a + (x.n.finalAmount - C.num(x.q.finalAmount)); }, 0);
+    if (!confirm('השינוי משפיע על ' + changes.length + ' דרישות תשלום קיימות (הפרש כולל ' + C.fmtMoney(diff) + ').\nלעדכן אותן לפי ההגדרות החדשות?\nתשלומים שכבר בוצעו לא ישתנו.')) return Promise.resolve();
+    var data = changes.map(function (x) {
+      return { range: "'PaymentRequests'!A" + x.n._row, values: [SHEETS_SCHEMA.PaymentRequests.map(function (h) { return x.n[h] == null ? '' : String(x.n[h]); })] };
+    });
+    return withSync(api(SHEETS + '/' + state.sheetId + '/values:batchUpdate', { method: 'POST', body: { valueInputOption: 'RAW', data: data } }).then(loadRequests), changes.length + ' דרישות עודכנו')
+      .then(function () { logActivity('recalc', 'PaymentRequests', changes.length + ' rows'); });
   }
   function saveStagesAction(btn) {
     var errs = C.validateStages(draftList()).errors;
@@ -777,7 +809,7 @@
     if (errs.length) return;
     btn.disabled = true;
     var p = String(draft.track) === '3' ? saveSettings({ t3Schedule: draftSettingsPayload().t3Schedule }) : saveStages(draft.stages);
-    withSync(p, 'לוח התשלומים נשמר').then(function () { logActivity('update', 'ContractorStages', ''); })
+    withSync(p, 'לוח התשלומים נשמר').then(function () { logActivity('update', 'ContractorStages', ''); return recalcRequests(); })
       .catch(handleError).then(function () { btn.disabled = false; });
   }
 
@@ -972,18 +1004,20 @@
       overdue.forEach(function (r) { alerts.push('<li><a href="#/stage/' + encodeURIComponent(r.stageId) + '"><span class="badge warn">באיחור</span> ' + esc(r.name) + ' · צפוי היה ב-' + C.fmtDate(r.date) + '</a></li>'); });
       openReqs.filter(function (r) { return !r.st.overdue; }).forEach(function (r) { alerts.push('<li><a href="#/stage/' + encodeURIComponent(r.stageId) + '"><span class="badge info">דרישה פתוחה</span> ' + esc(r.name) + ' · ' + M(r.st.remaining) + '</a></li>'); });
       if (t1 && !s.baseIndex) alerts.push('<li><a href="#/settings"><span class="badge warn">חסר</span> מדד הבסיס לא הוזן</a></li>');
+      else if (t1 && state.cbs && !contractFactor()) alerts.push('<li><a href="#/settings"><span class="badge warn">חסר</span> חודש מדד הבסיס — נדרש להמרת מדדי הלמ״ס לבסיס החוזה</a></li>');
       var indexCard = '';
       if (t1) {
         var lat = cbsLatest();
         if (lat) {
           var nx = C.nextPublication(lat);
           var bi = C.num(s.baseIndex);
-          var ch = bi > 0 ? (lat.v / bi - 1) * 100 : null;
+          var latC = toContract(lat.v);
+          var ch = bi > 0 && latC ? (latC / bi - 1) * 100 : null;
           var fresh = (function () { var k = C.knownMonthFor(todayIso()); return k && (lat.y * 100 + lat.m) >= (k.y * 100 + k.m); })();
           indexCard = '<section class="card"><div class="row between"><h2>מדד תשומות הבנייה</h2>' + (fresh ? '<span class="badge ok">עדכני</span>' : '<span class="badge warn">ממתין לפרסום</span>') + '</div>' +
-            '<div class="stats">' + stat('מדד ' + C.monthName(lat.y, lat.m), '<span class="num">' + lat.v + '</span>') +
+            '<div class="stats">' + stat('מדד ' + C.monthName(lat.y, lat.m), latC ? '<span class="num">' + latC.toFixed(2) + '</span> <span class="muted small">(' + lat.v + ' בלמ״ס)</span>' : '<span class="num">' + lat.v + '</span>') +
             stat('מדד בסיס', bi ? '<span class="num">' + esc(s.baseIndex) + '</span>' : '<a href="#/settings">להזנה</a>') +
-            stat('שינוי מהבסיס', ch == null ? '—' : '<span class="num">' + (ch >= 0 ? '+' : '') + ch.toFixed(2) + '%</span>') + '</div>' +
+            stat('שינוי מהבסיס', ch == null ? (bi ? '<a href="#/settings">חסר חודש הבסיס</a>' : '—') : '<span class="num">' + (ch >= 0 ? '+' : '') + ch.toFixed(2) + '%</span>') + '</div>' +
             '<p class="hint">' + (nx ? 'המדד הבא (' + C.monthName(nx.m === 1 ? nx.y - 1 : nx.y, nx.m === 1 ? 12 : nx.m - 1) + ') צפוי בסביבות 15/' + ('0' + nx.m).slice(-2) + '/' + nx.y + '. ' : '') + 'מקור: הלמ״ס' + (state.cbs.base ? ' · בסיס ' + esc(state.cbs.base) : '') + '.</p></section>';
         } else {
           indexCard = '<section class="card"><h2>מדד תשומות הבנייה</h2><p class="hint">שירות המדד האוטומטי עדיין לא הופעל. בינתיים אפשר להזין את המדד ידנית בכל דרישת תשלום.</p></section>';
@@ -1056,7 +1090,8 @@
     var d = form.data, k = knownIndexAt(d.receivedDate);
     var parts = [];
     if (!state.cbs) parts.push('שירות המדד עדיין לא פעיל — יש להזין את המדד ידנית.');
-    else if (k && k.v != null) parts.push('לפי הלמ״ס: מדד ' + C.monthName(k.y, k.m) + ' = ' + k.v + (d.indexSource === 'manual' ? '' : ' (מולא אוטומטית)'));
+    else if (k && k.v != null) parts.push('לפי הלמ״ס: מדד ' + C.monthName(k.y, k.m) + ' = ' + k.v + ' בבסיס החוזה (' + k.raw + ' בבסיס ' + (state.cbs.base || 'הלמ״ס') + ')' + (d.indexSource === 'manual' ? '' : ' · מולא אוטומטית'));
+    else if (k && k.raw != null) parts.push('מדד ' + C.monthName(k.y, k.m) + ' בלמ״ס: ' + k.raw + '. כדי להמיר לבסיס החוזה יש להזין בהגדרות את מדד הבסיס ואת החודש שלו.');
     else if (k) parts.push('מדד ' + C.monthName(k.y, k.m) + ' עוד לא פורסם או לא נמשך. אפשר להזין ידנית.');
     parts.push('מדד בסיס בחוזה: ' + esc(state.s.baseIndex || 'לא הוזן') + '.');
     var html = esc(parts[0]) + ' ' + parts.slice(1).join(' ');
