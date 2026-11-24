@@ -177,11 +177,28 @@
   }
   var STATUS_LABEL = { planned: 'מתוכנן', requested: 'התקבלה דרישה', partial: 'שולם חלקית', paid: 'שולם' };
 
+  var HE_MONTHS = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
+  function monthName(y, m) { return HE_MONTHS[m - 1] + ' ' + y; }
+  // המדד של חודש M מתפרסם בערב ה-15 בחודש M+1. לכן החל מה-16 הוא "ידוע".
+  function knownMonthFor(dateIso) {
+    var d = parseDate(dateIso); if (!d) return null;
+    var y = d.getFullYear(), m = d.getMonth() + 1 - (d.getDate() >= 16 ? 1 : 2);
+    while (m < 1) { m += 12; y -= 1; }
+    return { y: y, m: m };
+  }
+  function nextPublication(latest) {
+    if (!latest) return null;
+    var y = latest.y, m = latest.m + 2; // מדד החודש הבא מתפרסם ב-15 לחודש שאחריו
+    while (m > 12) { m -= 12; y += 1; }
+    return { y: y, m: m, day: 15 };
+  }
+  function ymKey(s) { var p = String(s || '').split('-'); return p.length === 2 ? { y: +p[0], m: +p[1] } : null; }
+
   var api = {
     TRACKS: TRACKS, DEFAULT_STAGES: DEFAULT_STAGES, DEFAULT_T3: DEFAULT_T3, DEFAULT_SETTINGS: DEFAULT_SETTINGS,
     num: num, round2: round2, parseDate: parseDate, isoDate: isoDate, addMonths: addMonths,
     fmtDate: fmtDate, fmtMoney: fmtMoney, fmtPct: fmtPct,
-    effectivePrice: effectivePrice, schedule: schedule, requestCalc: requestCalc, stageStatus: stageStatus, STATUS_LABEL: STATUS_LABEL, validateStages: validateStages, sumPct: sumPct
+    effectivePrice: effectivePrice, schedule: schedule, requestCalc: requestCalc, stageStatus: stageStatus, STATUS_LABEL: STATUS_LABEL, HE_MONTHS: HE_MONTHS, monthName: monthName, knownMonthFor: knownMonthFor, nextPublication: nextPublication, ymKey: ymKey, validateStages: validateStages, sumPct: sumPct
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.HMCalc = api;
 })(this);

@@ -38,7 +38,8 @@
     settingsRows: {}, // key -> {value, row}
     s: {},            // key -> value
     stages: [],       // ContractorStages
-    requests: [], payments: [], sheetGids: {}
+    requests: [], payments: [], sheetGids: {},
+    cbs: null         // data/index.json
   };
   var tokenClient = null;
   var pendingToken = null;   // {resolve,reject,promise}
@@ -282,6 +283,40 @@
       return api(SHEETS + '/' + state.sheetId + ':batchUpdate', { method: 'POST', body: { requests: [{ deleteDimension: { range: { sheetId: state.sheetGids[name], dimension: 'ROWS', startIndex: rowNum - 1, endIndex: rowNum } } }] } });
     });
   }
+  // ---------- מדד הלמ״ס ----------
+  function loadCbs() {
+    return fetch('data/index.json?t=' + Date.now(), { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) { state.cbs = j && j.series && j.series.length ? j : null; return state.cbs; })
+      .catch(function () { state.cbs = null; return null; });
+  }
+  function cbsValue(y, m) {
+    if (!state.cbs) return null;
+    var f = state.cbs.series.filter(function (x) { return x.y === y && x.m === m; })[0];
+    return f ? f.v : null;
+  }
+  function cbsLatest() { return state.cbs ? state.cbs.series[state.cbs.series.length - 1] : null; }
+  // המדד הידוע בתאריך: {y,m,v|null}
+  function knownIndexAt(dateIso) {
+    var km = C.knownMonthFor(dateIso); if (!km) return null;
+    var v = cbsValue(km.y, km.m);
+    if (v == null) {
+      // אם המדד של החודש עוד לא במאגר אבל התאריך בעבר הרחוק — לוקחים את האחרון שקדם לו
+      var lat = cbsLatest();
+      if (lat && (lat.y * 100 + lat.m) < (km.y * 100 + km.m)) return { y: km.y, m: km.m, v: null, pending: true };
+    }
+    return { y: km.y, m: km.m, v: v };
+  }
+  // העתקת מדדים חדשים לגיליון IndexHistory של המשתמש (ברקע)
+  function syncIndexHistory() {
+    if (!state.cbs) return Promise.resolve();
+    return readRows('IndexHistory').then(function (rows) {
+      var have = {}; rows.forEach(function (r) { have[r.year + '-' + r.month] = 1; });
+      var t = nowIso();
+      var add = state.cbs.series.filter(function (x) { return !have[x.y + '-' + x.m]; }).map(function (x) { return [String(x.y), String(x.m), String(x.v), '', 'cbs', t]; });
+      return add.length ? appendRows('IndexHistory', add) : null;
+    }).catch(function (e) { console.warn('IndexHistory sync', e); });
+  }
   // מוודא שכותרות הגיליונות מעודכנות (עמודות חדשות מתווספות בסוף)
   function ensureHeaders() {
     var data = Object.keys(SHEETS_SCHEMA).map(function (n) { return { range: "'" + n + "'!A1", values: [SHEETS_SCHEMA[n]] }; });
@@ -383,7 +418,8 @@
     state.rootId = proj.root.id; state.rootLink = proj.root.webViewLink;
     state.sheetId = proj.sheet.id; state.sheetLink = proj.sheet.webViewLink;
     loading('טוען נתונים…');
-    return ensureHeaders().then(function () { return Promise.all([loadSettings(), loadStages(), loadRequests(), loadPayments()]); }).then(function () {
+    return ensureHeaders().then(function () { return Promise.all([loadSettings(), loadStages(), loadRequests(), loadPayments(), loadCbs()]); }).then(function () {
+      syncIndexHistory();
       show('screen-app');
       renderUser();
       setSync('', 'מחובר');
@@ -529,12 +565,22 @@
   function indexFields() {
     return '<div class="fields">' +
       field('baseIndex', 'מדד בסיס', { type: 'number', step: 'any', inputmode: 'decimal', placeholder: 'לדוגמה 143.5545', hint: 'כפי שכתוב בחוזה. אפשר להשלים גם אחר כך.' }) +
-      field('baseIndexMonth', 'חודש מדד הבסיס', { type: 'month' }) +
+      field('baseIndexMonth', 'חודש מדד הבסיס', { type: 'month', hint: '<span id="base-hint">' + baseIndexHint() + '</span>' }) +
       field('exemptPct', 'חלק פטור ממדד בתחילת החוזה (%)', { type: 'number', step: 'any', inputmode: 'decimal', min: 0 }) +
       field('linkedPct', 'אחוז צמוד מכל תשלום (%)', { type: 'number', step: 'any', inputmode: 'decimal', min: 0 }) +
       field('indexRule', 'מדד קובע', { type: 'select', options: [['request', 'המדד הידוע במועד דרישת התשלום'], ['payment', 'המדד הידוע במועד התשלום בפועל']] }) +
       field('indexFloor', 'ירידת מדד', { type: 'select', options: [['true', 'לא יורד מתחת למדד הבסיס'], ['false', 'מחושב גם בירידה']] }) +
       '</div>';
+  }
+  function baseIndexHint() {
+    if (!draft || !state.cbs) return '';
+    var ym = C.ymKey(draft.baseIndexMonth); if (!ym) return '';
+    var v = cbsValue(ym.y, ym.m);
+    if (v == null) return 'אין נתון בלמ״ס לחודש הזה.';
+    var out = 'לפי הלמ״ס: ' + v + (state.cbs.base ? ' (בסיס ' + esc(state.cbs.base) + ')' : '') + '.';
+    var bi = C.num(draft.baseIndex);
+    if (bi > 0 && Math.abs(bi / v - 1) > 0.02) out += ' <span class="warn-text">שים לב: המדד שהזנת שונה מהותית — ייתכן שבחוזה מדובר בבסיס אחר. החישוב תמיד לפי המספר שבחוזה.</span>';
+    return out;
   }
   function stageEditor() {
     var t = String(draft.track);
@@ -675,10 +721,6 @@
       '<button type="button" class="btn btn-ghost btn-sm danger-text" data-action="revoke">ביטול הרשאות</button></div>' +
       '<p class="hint">התנתקות יוצאת מהאפליקציה בלבד. ביטול הרשאות מנתק את האפליקציה מחשבון Google שלך. הנתונים ב-Drive נשארים בשני המקרים.</p></section>';
     return (isSetup() ? '' : '<div class="banner"><span>ההגדרה הראשונית לא הושלמה.</span><a class="btn btn-sm btn-primary" href="#/setup">לאשף ההגדרה</a></div>') +
-      '<section class="card" id="sec-display"><h2>תצוגת סכומים</h2><p class="hint">כל הסכומים מוזנים ונשמרים כולל מע״מ. כאן בוחרים רק איך להציג אותם.</p><div class="fields">' +
-      field('vatMode', 'הצגת סכומים', { type: 'select', options: [['incl', 'כולל מע״מ'], ['excl', 'ללא מע״מ']] }) +
-      field('vatRate', 'שיעור מע״מ (%)', { type: 'number', step: 'any', inputmode: 'decimal', min: 0 }) +
-      '</div><div class="row end"><button type="button" class="btn btn-primary" data-action="save-display">שמירה</button></div></section>' +
       '<section class="card" id="sec-project"><h2>פרטי פרויקט</h2><div class="fields">' +
       field('projectName', 'שם הפרויקט') + field('contractor', 'קבלן / חברה יזמית') + field('address', 'כתובת') + field('aptNo', 'מספר דירה') +
       field('signDate', 'תאריך חתימת החוזה', { type: 'date', required: true }) + field('deliveryDate', 'מסירה משוערת', { type: 'date' }) +
@@ -693,6 +735,10 @@
       '<div class="error-box" id="err-contract" hidden></div>' +
       '<div class="row end"><button type="button" class="btn btn-primary" data-action="save-contract">שמירה</button></div></section>' +
 
+      '<section class="card" id="sec-display"><h2>תצוגת סכומים</h2><p class="hint">כל הסכומים מוזנים ונשמרים כולל מע״מ. כאן בוחרים רק איך להציג אותם.</p><div class="fields">' +
+      field('vatMode', 'הצגת סכומים', { type: 'select', options: [['incl', 'כולל מע״מ'], ['excl', 'ללא מע״מ']] }) +
+      field('vatRate', 'שיעור מע״מ (%)', { type: 'number', step: 'any', inputmode: 'decimal', min: 0 }) +
+      '</div><div class="row end"><button type="button" class="btn btn-primary" data-action="save-display">שמירה</button></div></section>' +
       '<section class="card" id="sec-stages"><h2>לוח תשלומים' + (t === '3' ? ' — מסלול מוקדם / במסירה' : '') + '</h2>' +
       stageEditor() +
       '<div class="error-box" id="err-stages" hidden></div>' +
@@ -834,7 +880,7 @@
       var reqList = reqs.length ? reqs.map(function (q) {
         var diff = q.contractorAmount !== '' && Math.abs(C.num(q.contractorAmount) - C.num(q.finalAmount)) >= 1;
         return '<li class="item"><div><b>דרישה' + (q.number ? ' ' + esc(q.number) : '') + '</b> · <span class="muted small">' + C.fmtDate(q.receivedDate) + '</span>' +
-          (t1 && q.indexValue ? '<div class="muted small">מדד ' + esc(q.indexValue) + (q.indexMonth ? ' (' + esc(q.indexMonth.split('-').reverse().join('/')) + ')' : '') + (q.indexSource === 'manual' ? ' · ידני' : '') + ' · הצמדה ' + M(C.num(q.indexAdj)) + '</div>' : '') +
+          (t1 && q.indexValue ? '<div class="muted small">מדד ' + esc(q.indexValue) + (q.indexMonth ? ' (' + esc(q.indexMonth.split('-').reverse().join('/')) + ')' : '') + (q.indexSource === 'manual' ? ' · ידני' : (q.indexSource === 'cbs' ? ' · למ״ס' : '')) + ' · הצמדה ' + M(C.num(q.indexAdj)) + '</div>' : '') +
           (t1 && !q.indexValue && C.num(q.baseAmount) && row.linkedBase ? '<div class="muted small">טרם הוזן מדד</div>' : '') +
           (diff ? '<div class="warn-text small">בדרישת הקבלן: ' + M(C.num(q.contractorAmount)) + ' · הפרש ' + M(C.num(q.contractorAmount) - C.num(q.finalAmount)) + '</div>' : '') +
           '</div><div class="item-side"><b class="num">' + M(C.num(q.finalAmount)) + '</b><span class="tools">' +
@@ -926,8 +972,25 @@
       overdue.forEach(function (r) { alerts.push('<li><a href="#/stage/' + encodeURIComponent(r.stageId) + '"><span class="badge warn">באיחור</span> ' + esc(r.name) + ' · צפוי היה ב-' + C.fmtDate(r.date) + '</a></li>'); });
       openReqs.filter(function (r) { return !r.st.overdue; }).forEach(function (r) { alerts.push('<li><a href="#/stage/' + encodeURIComponent(r.stageId) + '"><span class="badge info">דרישה פתוחה</span> ' + esc(r.name) + ' · ' + M(r.st.remaining) + '</a></li>'); });
       if (t1 && !s.baseIndex) alerts.push('<li><a href="#/settings"><span class="badge warn">חסר</span> מדד הבסיס לא הוזן</a></li>');
+      var indexCard = '';
+      if (t1) {
+        var lat = cbsLatest();
+        if (lat) {
+          var nx = C.nextPublication(lat);
+          var bi = C.num(s.baseIndex);
+          var ch = bi > 0 ? (lat.v / bi - 1) * 100 : null;
+          var fresh = (function () { var k = C.knownMonthFor(todayIso()); return k && (lat.y * 100 + lat.m) >= (k.y * 100 + k.m); })();
+          indexCard = '<section class="card"><div class="row between"><h2>מדד תשומות הבנייה</h2>' + (fresh ? '<span class="badge ok">עדכני</span>' : '<span class="badge warn">ממתין לפרסום</span>') + '</div>' +
+            '<div class="stats">' + stat('מדד ' + C.monthName(lat.y, lat.m), '<span class="num">' + lat.v + '</span>') +
+            stat('מדד בסיס', bi ? '<span class="num">' + esc(s.baseIndex) + '</span>' : '<a href="#/settings">להזנה</a>') +
+            stat('שינוי מהבסיס', ch == null ? '—' : '<span class="num">' + (ch >= 0 ? '+' : '') + ch.toFixed(2) + '%</span>') + '</div>' +
+            '<p class="hint">' + (nx ? 'המדד הבא (' + C.monthName(nx.m === 1 ? nx.y - 1 : nx.y, nx.m === 1 ? 12 : nx.m - 1) + ') צפוי בסביבות 15/' + ('0' + nx.m).slice(-2) + '/' + nx.y + '. ' : '') + 'מקור: הלמ״ס' + (state.cbs.base ? ' · בסיס ' + esc(state.cbs.base) : '') + '.</p></section>';
+        } else {
+          indexCard = '<section class="card"><h2>מדד תשומות הבנייה</h2><p class="hint">שירות המדד האוטומטי עדיין לא הופעל. בינתיים אפשר להזין את המדד ידנית בכל דרישת תשלום.</p></section>';
+        }
+      }
       var alertCard = alerts.length ? '<section class="card"><h2>התראות</h2><ul class="alerts">' + alerts.join('') + '</ul></section>' : '';
-      return '<div class="grid">' + hero + nextCard + '</div>' + alertCard + timeline;
+      return '<div class="grid">' + hero + nextCard + '</div>' + alertCard + '<div class="grid">' + indexCard + timeline + '</div>';
     }
   };
 
@@ -971,9 +1034,38 @@
     var existing = reqId ? state.requests.filter(function (q) { return q.id === reqId; })[0] : null;
     var sid = existing ? existing.stageId : (stageId || ((rows.filter(function (r) { return r.st.status !== 'paid'; })[0] || rows[0]) || {}).stageId);
     form = { kind: 'req', data: existing ? clone(existing) : { stageId: sid, number: '', receivedDate: todayIso(), dueDate: '', baseAmount: '', indexValue: '', indexMonth: '', contractorAmount: '', notes: '' } };
-    if (!existing) form.data.baseAmount = defaultReqBase(sid);
+    if (!existing) { form.data.baseAmount = defaultReqBase(sid); autofillIndex(); }
     renderRequestForm(existing ? 'עריכת דרישת תשלום' : 'דרישת תשלום חדשה');
   }
+  function autofillIndex() {
+    if (String(state.s.track) !== '1' || !form || form.kind !== 'req') return;
+    if (form.data.indexSource === 'manual') return;
+    var k = knownIndexAt(form.data.receivedDate);
+    if (k && k.v != null) {
+      form.data.indexValue = String(k.v);
+      form.data.indexMonth = k.y + '-' + ('0' + k.m).slice(-2);
+      form.data.indexSource = 'cbs';
+    } else {
+      form.data.indexValue = ''; form.data.indexMonth = k ? k.y + '-' + ('0' + k.m).slice(-2) : ''; form.data.indexSource = '';
+    }
+    var iv = $('m-indexValue'), im = $('m-indexMonth');
+    if (iv) iv.value = form.data.indexValue;
+    if (im) im.value = form.data.indexMonth;
+  }
+  function indexHintHtml() {
+    var d = form.data, k = knownIndexAt(d.receivedDate);
+    var parts = [];
+    if (!state.cbs) parts.push('שירות המדד עדיין לא פעיל — יש להזין את המדד ידנית.');
+    else if (k && k.v != null) parts.push('לפי הלמ״ס: מדד ' + C.monthName(k.y, k.m) + ' = ' + k.v + (d.indexSource === 'manual' ? '' : ' (מולא אוטומטית)'));
+    else if (k) parts.push('מדד ' + C.monthName(k.y, k.m) + ' עוד לא פורסם או לא נמשך. אפשר להזין ידנית.');
+    parts.push('מדד בסיס בחוזה: ' + esc(state.s.baseIndex || 'לא הוזן') + '.');
+    var html = esc(parts[0]) + ' ' + parts.slice(1).join(' ');
+    if (d.indexSource === 'manual' && k && k.v != null) html += ' <button type="button" class="link-btn" data-action="index-revert">חזור למדד הלמ״ס</button>';
+    if (d.indexSource === 'manual') html += ' <span class="badge warn">ידני</span>';
+    return html;
+  }
+  var lastIndexHint = '';
+  function refreshIndexHint() { var h = $('mh-indexValue'); if (!h) return; var x = indexHintHtml(); if (x !== lastIndexHint || !h.innerHTML.trim()) { h.innerHTML = x; lastIndexHint = x; } }
   function defaultReqBase(sid) {
     var row = findStage(sid); if (!row) return '';
     var used = reqsOf(sid).reduce(function (a, q) { return a + C.num(q.baseAmount); }, 0);
@@ -987,13 +1079,14 @@
       ff('dueDate', 'לתשלום עד', { type: 'date' }) +
       ff('number', 'מספר דרישה') +
       ff('baseAmount', 'סכום בסיס (₪, כולל מע״מ)', { type: 'number', step: 'any', inputmode: 'decimal', required: true, hint: 'ברירת המחדל: יתרת הבסיס של אבן הדרך.' }) +
-      (t1 ? ff('indexValue', 'מדד קובע', { type: 'number', step: 'any', inputmode: 'decimal', hint: 'המדד הידוע ב' + (state.s.indexRule === 'payment' ? 'מועד התשלום' : 'מועד הדרישה') + ', כפי שמופיע בדרישה. מדד בסיס: ' + esc(state.s.baseIndex || 'לא הוזן') + '.' }) +
+      (t1 ? ff('indexValue', 'מדד קובע', { type: 'number', step: 'any', inputmode: 'decimal', hint: ' ' }) +
         ff('indexMonth', 'חודש המדד', { type: 'month' }) : '') +
       ff('contractorAmount', 'הסכום בדרישת הקבלן (לבדיקה)', { type: 'number', step: 'any', inputmode: 'decimal', hint: 'אופציונלי. אם יש הפרש מהחישוב — תוצג התראה.' }) +
       ff('notes', 'הערות', { wide: true }) +
       '</div><div class="calc-box" id="req-calc"></div><div class="error-box" id="m-err" hidden></div>' +
       '<div class="modal-actions"><button type="button" class="btn btn-ghost" data-action="modal-close">ביטול</button><button type="button" class="btn btn-primary" data-action="save-req">שמירה</button></div>';
     openModal(title, html);
+    refreshIndexHint();
     updateRequestCalc();
   }
   function updateRequestCalc() {
@@ -1022,7 +1115,7 @@
     var c = C.requestCalc(state.s, row, d.baseAmount, d.indexValue);
     var obj = {
       id: d.id || uid(), stageId: d.stageId, number: d.number, receivedDate: d.receivedDate, dueDate: d.dueDate,
-      baseAmount: c.base, indexValue: d.indexValue, indexMonth: d.indexMonth, indexSource: d.indexValue ? 'manual' : '',
+      baseAmount: c.base, indexValue: d.indexValue, indexMonth: d.indexMonth, indexSource: d.indexValue ? (d.indexSource || 'manual') : '',
       indexAdj: c.adj, finalAmount: c.final, notes: d.notes, updatedAt: nowIso(), contractorAmount: d.contractorAmount, _row: d._row
     };
     btn.disabled = true;
@@ -1093,6 +1186,9 @@
     form.data[k] = t.value;
     if (form.kind === 'req') {
       if (k === 'stageId' && !form.data.id) { form.data.baseAmount = defaultReqBase(t.value); var b = $('m-baseAmount'); if (b) b.value = form.data.baseAmount; }
+      if (k === 'indexValue' || k === 'indexMonth') form.data.indexSource = 'manual';
+      if (k === 'receivedDate') autofillIndex();
+      refreshIndexHint();
       updateRequestCalc();
     } else if (form.kind === 'pay' && k === 'stageId') {
       form.data.requestId = ''; var row = findStage(t.value);
@@ -1111,6 +1207,7 @@
       draft[k] = t.value;
       if (t.hasAttribute('data-money')) { var h = $('h-' + k); if (h) h.textContent = t.value ? C.fmtMoney(C.num(t.value)) : ''; }
       if (['fixSurcharge', 't3Surcharge', 'exemptPct', 'linkedPct'].indexOf(k) >= 0) refreshTrackDescs();
+      if (k === 'baseIndexMonth' || k === 'baseIndex') { var bh = $('base-hint'); if (bh) bh.innerHTML = baseIndexHint(); }
       updateEditorSummary();
     } else if (t.hasAttribute('data-se')) {
       var i = +t.getAttribute('data-i');
@@ -1179,6 +1276,7 @@
       case 'del-pay': deletePayment(btn.getAttribute('data-id')); return;
       case 'save-pay': savePayment(btn); return;
       case 'modal-close': closeModal(); return;
+      case 'index-revert': if (form) { form.data.indexSource = ''; autofillIndex(); refreshIndexHint(); updateRequestCalc(); } return;
       case 'save-display': {
         var r = C.num(draft.vatRate, -1);
         if (r < 0 || r > 50) { toast('שיעור מע״מ לא תקין', 'err'); return; }
