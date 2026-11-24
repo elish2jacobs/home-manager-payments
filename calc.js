@@ -228,11 +228,27 @@
     return v;
   }
 
+  var DEFAULT_CATEGORIES = ['מטבח', 'גינה ופיתוח חוץ', 'נגרות', 'שינויי דיירים', 'הוצאות משפטיות', 'הוצאות רכישה ומימון', 'ריהוט', 'תאורה', 'מוצרי חשמל', 'מיזוג אוויר', 'תקשורת ובית חכם', 'אלומיניום ותריסים', 'שונות'];
+  var EXP_STATUS = { planning: 'בתכנון', quote: 'הצעת מחיר', committed: 'התחייבות', partial: 'שולם חלקית', paid: 'שולם', cancelled: 'בוטל' };
+  // מצב הוצאה: בוטל ידני גובר; אחרת לפי תשלומים מול ההתחייבות; אחרת המצב הידני
+  function expenseCalc(e, pays) {
+    var paid = round2((pays || []).reduce(function (a, p) { return a + num(p.amount); }, 0));
+    var commit = num(e.commitment), est = num(e.estimate);
+    var status = e.status || 'planning';
+    if (status !== 'cancelled') {
+      if (commit > 0 && paid >= commit - 0.5) status = 'paid';
+      else if (paid > 0) status = 'partial';
+      else if (commit > 0 && (status === 'planning' || status === 'quote')) status = 'committed';
+    }
+    var value = status === 'cancelled' ? 0 : (commit > 0 ? commit : est);
+    return { paid: paid, commit: status === 'cancelled' ? 0 : commit, est: est, value: value, remaining: round2(Math.max(0, (commit > 0 ? commit : 0) - paid)), status: status };
+  }
+
   var api = {
     TRACKS: TRACKS, DEFAULT_STAGES: DEFAULT_STAGES, DEFAULT_T3: DEFAULT_T3, DEFAULT_SETTINGS: DEFAULT_SETTINGS,
     num: num, round2: round2, parseDate: parseDate, isoDate: isoDate, addMonths: addMonths,
     fmtDate: fmtDate, fmtMoney: fmtMoney, fmtPct: fmtPct,
-    effectivePrice: effectivePrice, schedule: schedule, requestCalc: requestCalc, stageStatus: stageStatus, STATUS_LABEL: STATUS_LABEL, HE_MONTHS: HE_MONTHS, DEFAULT_SCENARIOS: DEFAULT_SCENARIOS, projectYear: projectYear, forecastIndex: forecastIndex, monthName: monthName, knownMonthFor: knownMonthFor, nextPublication: nextPublication, ymKey: ymKey, validateStages: validateStages, sumPct: sumPct
+    effectivePrice: effectivePrice, schedule: schedule, requestCalc: requestCalc, stageStatus: stageStatus, STATUS_LABEL: STATUS_LABEL, HE_MONTHS: HE_MONTHS, DEFAULT_CATEGORIES: DEFAULT_CATEGORIES, EXP_STATUS: EXP_STATUS, expenseCalc: expenseCalc, DEFAULT_SCENARIOS: DEFAULT_SCENARIOS, projectYear: projectYear, forecastIndex: forecastIndex, monthName: monthName, knownMonthFor: knownMonthFor, nextPublication: nextPublication, ymKey: ymKey, validateStages: validateStages, sumPct: sumPct
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.HMCalc = api;
 })(this);

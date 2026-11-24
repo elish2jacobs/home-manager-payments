@@ -40,7 +40,7 @@
     stages: [],       // ContractorStages
     requests: [], payments: [], sheetGids: {},
     cbs: null,        // data/index.json
-    scenarios: []
+    scenarios: [], categories: [], expenses: []
   };
   var tokenClient = null;
   var pendingToken = null;   // {resolve,reject,promise}
@@ -272,6 +272,20 @@
     if (obj._row) return api(SHEETS + '/' + state.sheetId + '/values/' + rng(name, 'A' + obj._row) + '?valueInputOption=RAW', { method: 'PUT', body: { values: [row] } });
     return appendRows(name, [row]);
   }
+  function loadCategories() {
+    return readRows('ExpenseCategories').then(function (r) {
+      var rows = r.filter(function (x) { return x.id; });
+      if (!rows.length && !state.s.categoriesSeeded) {
+        var t = nowIso();
+        return appendRows('ExpenseCategories', C.DEFAULT_CATEGORIES.map(function (n, i) { return ['c' + (i + 1), String(i + 1), n, '0', t]; }))
+          .then(function () { return saveSettings({ categoriesSeeded: 'true' }); }).then(loadCategories);
+      }
+      rows.sort(function (a, b) { return C.num(a.order) - C.num(b.order); });
+      state.categories = rows;
+      return rows;
+    });
+  }
+  function loadExpenses() { return readRows('Expenses').then(function (r) { state.expenses = r.filter(function (x) { return x.id; }); return state.expenses; }); }
   function loadScenarios() {
     return readRows('Scenarios').then(function (r) {
       state.scenarios = r.filter(function (x) { return x.id; }).map(function (x) { return { id: x.id, name: x.name, y1: C.num(x.y1), y2: C.num(x.y2), y3: C.num(x.y3), _row: x._row }; });
@@ -431,7 +445,7 @@
     state.rootId = proj.root.id; state.rootLink = proj.root.webViewLink;
     state.sheetId = proj.sheet.id; state.sheetLink = proj.sheet.webViewLink;
     loading('טוען נתונים…');
-    return ensureHeaders().then(function () { return Promise.all([loadSettings(), loadStages(), loadRequests(), loadPayments(), loadCbs(), loadScenarios()]); }).then(function () {
+    return ensureHeaders().then(function () { return Promise.all([loadSettings(), loadStages(), loadRequests(), loadPayments(), loadCbs(), loadScenarios(), loadExpenses()]); }).then(loadCategories).then(function () {
       syncIndexHistory();
       show('screen-app');
       renderUser();
@@ -465,25 +479,27 @@
     settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/>',
     up: '<path d="m6 15 6-6 6 6"/>', down: '<path d="m6 9 6 6 6-6"/>', trash: '<path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/>',
     plus: '<path d="M12 5v14M5 12h14"/>', check: '<path d="M20 6 9 17l-5-5"/>',
-    edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/>', right: '<path d="m9 18 6-6-6-6"/>'
+    edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/>', right: '<path d="m9 18 6-6-6-6"/>',
+    menu: '<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>'
   };
   var ROUTES = [
     { id: 'dashboard', title: 'דשבורד', icon: 'home', mobile: true },
     { id: 'contractor', title: 'קבלן ואבני דרך', short: 'אבני דרך', icon: 'stages', mobile: true },
+    { id: 'expenses', title: 'הוצאות נוספות', short: 'הוצאות', icon: 'expenses', mobile: true },
     { id: 'payments', title: 'מרכז תשלומים', short: 'תשלומים', icon: 'pay', mobile: true },
-    { id: 'expenses', title: 'הוצאות נוספות', icon: 'expenses' },
     { id: 'calculator', title: 'מחשבון מדד', icon: 'calc' },
     { id: 'documents', title: 'מסמכים', icon: 'docs' },
     { id: 'contacts', title: 'אנשי קשר', icon: 'contacts' },
-    { id: 'settings', title: 'הגדרות', icon: 'settings', mobile: true }
+    { id: 'settings', title: 'הגדרות', icon: 'settings' },
+    { id: 'more', title: 'עוד', icon: 'menu', mobile: true, mobileOnly: true }
   ];
-  var HIDDEN_ROUTES = [{ id: 'setup', title: 'הגדרת פרויקט', icon: 'settings' }, { id: 'stage', title: 'אבן דרך', icon: 'stages', nav: 'contractor' }];
+  var HIDDEN_ROUTES = [{ id: 'setup', title: 'הגדרת פרויקט', icon: 'settings' }, { id: 'stage', title: 'אבן דרך', icon: 'stages', nav: 'contractor' }, { id: 'category', title: 'קטגוריה', icon: 'expenses', nav: 'expenses' }];
   function icon(name, size) {
     size = size || 20;
     return '<svg viewBox="0 0 24 24" width="' + size + '" height="' + size + '" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICONS[name] + '</svg>';
   }
   function buildNav() {
-    $('nav').innerHTML = ROUTES.map(function (r) {
+    $('nav').innerHTML = ROUTES.filter(function (r) { return !r.mobileOnly; }).map(function (r) {
       return '<a href="#/' + r.id + '" data-route="' + r.id + '">' + icon(r.icon) + '<span>' + r.title + '</span></a>';
     }).join('');
     $('bottomnav').innerHTML = ROUTES.filter(function (r) { return r.mobile; }).map(function (r) {
@@ -957,10 +973,10 @@
           '<div class="stage-main"><span class="stage-n">' + (i + 1) + '</span><div><b>' + esc(r.name) + '</b>' +
           '<div class="muted small">' + C.fmtPct(r.pct) + ' · ' + (r.date ? C.fmtDate(r.date) : 'חודש ' + r.month) + '</div>' +
           '<div class="badges">' + statusBadge(r.st) + indexBadge(r) + '</div></div></div>' +
-          '<div class="stage-side"><b class="num">' + M(r.st.forecast) + '</b>' +
+          '<div class="stage-side"><b class="num">' + M(r.base) + '</b>' +
+          (r.st.adj ? '<span class="muted small">הצמדה ' + M(r.st.adj) + '</span>' : '') +
+          (r.est ? '<span class="muted small">הצמדה נכון להיום ' + M(r.est) + '</span>' : '') +
           (r.st.paid > 0 && r.st.forecast - r.st.paid > 0.5 ? '<span class="muted small">יתרה ' + M(r.st.forecast - r.st.paid) + '</span>' : '') +
-          (r.st.adj ? '<span class="muted small">כולל הצמדה ' + M(r.st.adj) + '</span>' : '') +
-          (r.est ? '<span class="muted small">כולל הצמדה משוערת ' + M(r.est) + '</span>' : '') +
           '</div></a></li>';
       }).join('');
       return head + '<section class="card"><div class="row between"><h2>לוח התשלומים</h2><a class="btn btn-ghost btn-sm" href="#/settings">עריכת הלוח</a></div>' +
@@ -997,9 +1013,9 @@
         '<section class="card"><div class="row between"><div class="muted small">' + C.fmtPct(row.pct) + ' מהחוזה · ' + (row.date ? 'צפוי ב-' + C.fmtDate(row.date) : '') + '</div>' + statusBadge(st) + '</div>' +
         '<div class="stats">' + stat('סכום בסיס', M(row.base)) +
         (t1 ? stat('חלק צמוד', row.linkedBase ? M(row.linkedBase) : 'פטור') : '') +
-        (t1 && row.linkedBase ? stat('הצמדה', M(st.adj) + (row.est ? '<span class="muted small"> + ' + M(row.est) + ' משוער</span>' : '')) : '') +
+        (t1 && row.linkedBase ? stat('הצמדה', M(st.adj) + (row.est ? '<span class="muted small"> + ' + M(row.est) + ' נכון להיום</span>' : '')) : '') +
         stat('סכום צפוי', M(st.forecast)) + stat('שולם', M(st.paid)) + stat('יתרה', M(Math.max(0, st.forecast - st.paid))) + '</div>' +
-        (row.est ? '<p class="hint">ההצמדה המשוערת ' + estBasisLabel() + '. תוחלף בהצמדה בפועל כשתוזן דרישה עם מדד.</p>' : '') + vatNote() +
+        (row.est ? '<p class="hint">הצמדה נכון להיום — ' + estBasisLabel() + '. תוחלף בהצמדה בפועל כשתוזן דרישה עם מדד.</p>' : '') + vatNote() +
         '<div class="row"><button type="button" class="btn btn-primary" data-action="new-req" data-stage="' + esc(row.stageId) + '">דרישת תשלום</button>' +
         '<button type="button" class="btn btn-secondary" data-action="new-pay" data-stage="' + esc(row.stageId) + '">רישום תשלום</button></div></section>' +
         '<section class="card"><h2>דרישות תשלום</h2><ul class="items">' + reqList + '</ul></section>' +
@@ -1017,11 +1033,27 @@
         '</div><div class="calc-box" id="calc-out"></div></section>';
       return calc;
     },
+    expenses: function () { if (!isSetup()) return needSetupCard(); return expensesView(); },
+    category: function (r, param) { if (!isSetup()) return needSetupCard(); return categoryView(param); },
+    more: function () {
+      return '<section class="card"><ul class="more-list">' + ROUTES.filter(function (r) { return !r.mobile; }).map(function (r) {
+        return '<li><a href="#/' + r.id + '">' + icon(r.icon) + '<span>' + r.title + '</span>' + icon('right', 16) + '</a></li>';
+      }).join('') + '</ul></section>' +
+        '<section class="card"><div class="muted small">' + esc(state.user && state.user.email) + '</div><div class="row"><button type="button" class="btn btn-secondary btn-sm" data-action="logout">התנתקות</button></div></section>';
+    },
     payments: function () {
       if (!isSetup()) return needSetupCard();
       var rows = ledger();
       var pays = state.payments.filter(function (p) { return p.type === 'contractor'; }).slice().sort(function (a, b) { return a.date < b.date ? 1 : -1; });
       var total = pays.reduce(function (a, p) { return a + C.num(p.amount); }, 0);
+      var epays = state.payments.filter(function (p) { return p.type === 'expense'; }).slice().sort(function (a, b) { return a.date < b.date ? 1 : -1; });
+      var etotal = epays.reduce(function (a, p) { return a + C.num(p.amount); }, 0);
+      var elist = epays.length ? epays.map(function (p) {
+        var e = expById(p.expenseId), c = e ? catById(e.categoryId) : null;
+        return '<li><a class="item link" href="' + (c ? '#/category/' + encodeURIComponent(c.id) : '#/expenses') + '"><div><b>' + esc(e ? e.name : '(נמחק)') + '</b>' +
+          '<div class="muted small">' + (c ? esc(c.name) + ' · ' : '') + C.fmtDate(p.date) + ' · ' + esc(methodLabel(p.method)) + '</div></div>' +
+          '<div class="item-side"><b class="num">' + M(C.num(p.amount)) + '</b></div></a></li>';
+      }).join('') : '<li class="muted small">עדיין לא נרשמו תשלומים להוצאות.</li>';
       var open = rows.filter(function (r) { return (r.st.status === 'requested' || r.st.status === 'partial'); });
       var openList = open.length ? open.map(function (r) {
         return '<li><a class="item link" href="#/stage/' + encodeURIComponent(r.stageId) + '"><div><b>' + esc(r.name) + '</b><div class="badges">' + statusBadge(r.st) + '</div></div>' +
@@ -1032,11 +1064,12 @@
           '<div class="muted small">' + C.fmtDate(p.date) + ' · ' + esc(methodLabel(p.method)) + (p.fundingSource ? ' · ' + esc(p.fundingSource) : '') + '</div></div>' +
           '<div class="item-side"><b class="num">' + M(C.num(p.amount)) + '</b></div></a></li>';
       }).join('') : '<li class="muted small">עדיין לא נרשמו תשלומים.</li>';
-      return '<section class="card"><div class="stats">' + stat('שולם לקבלן', M(total)) + stat('מספר תשלומים', pays.length) + stat('דרישות פתוחות', open.length) + '</div>' + vatNote() +
+      return '<section class="card"><div class="stats">' + stat('שולם לקבלן', M(total)) + stat('שולם להוצאות', M(etotal)) + stat('סה״כ שולם', M(total + etotal)) + stat('דרישות פתוחות', open.length) + '</div>' + vatNote() +
         '<div class="row"><button type="button" class="btn btn-primary" data-action="new-pay">רישום תשלום</button>' +
         '<button type="button" class="btn btn-secondary" data-action="new-req">דרישת תשלום</button></div></section>' +
         '<section class="card"><h2>דרישות פתוחות</h2><ul class="items">' + openList + '</ul></section>' +
-        '<section class="card"><h2>תשלומים לקבלן</h2><ul class="items">' + list + '</ul></section>';
+        '<section class="card"><h2>תשלומים לקבלן</h2><ul class="items">' + list + '</ul></section>' +
+        '<section class="card"><h2>תשלומים להוצאות נוספות</h2><ul class="items">' + elist + '</ul></section>';
     },
 
     dashboard: function () {
@@ -1071,18 +1104,19 @@
         '<div class="bar" role="img" aria-label="שולם ' + Math.round(paidPct) + ' אחוז"><div style="width:' + paidPct.toFixed(1) + '%"></div></div>' +
         '<div class="muted small">' + Math.round(paidPct) + '% שולם</div>' +
         '<div class="stats">' + stat('שולם בפועל', M(paid)) + stat('יתרה לתשלום', M(commitment - paid)) +
-        (t1 ? stat('הצמדה בפועל', M(adj)) + stat('הצמדה משוערת', M(estTotal)) : stat('תוספת חוזית', M(eff - C.num(s.basePrice)))) + '</div>' +
-        (t1 ? '<p class="hint">כולל הצמדה משוערת לתשלומים עתידיים ' + estBasisLabel() + '.</p>' : '') + vatNote() + '</section>';
+        (t1 ? stat('הצמדה בפועל', M(adj)) + stat('הצמדה נכון להיום', M(estTotal)) : stat('תוספת חוזית', M(eff - C.num(s.basePrice)))) + '</div>' +
+        (t1 ? '<p class="hint">"הצמדה נכון להיום" — לתשלומים שעוד לא התקבלה עליהם דרישה, ' + estBasisLabel() + '.</p>' : '') + vatNote() + '</section>';
       var nextCard = next ? '<section class="card"><div class="row between"><h2>התשלום הבא</h2>' + statusBadge(next.st) + '</div>' +
         '<div><b style="font-size:18px">' + esc(next.name) + '</b><div class="muted small">' + (next.date ? 'צפוי ב-' + C.fmtDate(next.date) + ' · ' : '') + 'חודש ' + next.month + ' לפרויקט</div></div>' +
         kv('סכום בסיס', '<b class="num">' + M(next.base) + '</b>') +
-        (next.st.adj ? kv('הצמדה לפי דרישה', '<b class="num">' + M(next.st.adj) + '</b>') : (next.est ? kv('הצמדה משוערת', '<b class="num">' + M(next.est) + '</b>') : kv('הצמדה', indexBadge(next)))) +
+        (next.st.adj ? kv('הצמדה לפי דרישה', '<b class="num">' + M(next.st.adj) + '</b>') : (next.est ? kv('הצמדה נכון להיום', '<b class="num">' + M(next.est) + '</b>') : kv('הצמדה', indexBadge(next)))) +
         kv('נותר לתשלום', '<b class="num">' + M(next.st.forecast - next.st.paid) + '</b>') +
         '<div class="row"><a class="btn btn-secondary btn-sm" href="#/stage/' + encodeURIComponent(next.stageId) + '">לפרטים</a></div></section>' :
         '<section class="card"><div class="empty">' + icon('check', 28) + '<b>כל התשלומים לקבלן שולמו</b></div></section>';
       var alerts = [];
       overdue.forEach(function (r) { alerts.push('<li><a href="#/stage/' + encodeURIComponent(r.stageId) + '"><span class="badge warn">באיחור</span> ' + esc(r.name) + ' · צפוי היה ב-' + C.fmtDate(r.date) + '</a></li>'); });
       openReqs.filter(function (r) { return !r.st.overdue; }).forEach(function (r) { alerts.push('<li><a href="#/stage/' + encodeURIComponent(r.stageId) + '"><span class="badge info">דרישה פתוחה</span> ' + esc(r.name) + ' · ' + M(r.st.remaining) + '</a></li>'); });
+      state.categories.forEach(function (c) { var a = catAgg(c); if (a.over) alerts.push('<li><a href="#/category/' + encodeURIComponent(c.id) + '"><span class="badge warn">חריגה</span> ' + esc(c.name) + ' · ' + M(a.value - a.budget) + ' מעל התקציב</a></li>'); });
       if (t1 && !s.baseIndex) alerts.push('<li><a href="#/settings"><span class="badge warn">חסר</span> מדד הבסיס לא הוזן</a></li>');
       else if (t1 && state.cbs && !contractFactor()) alerts.push('<li><a href="#/settings"><span class="badge warn">חסר</span> חודש מדד הבסיס — נדרש להמרת מדדי הלמ״ס לבסיס החוזה</a></li>');
       var indexCard = '';
@@ -1104,7 +1138,12 @@
         }
       }
       var alertCard = alerts.length ? '<section class="card"><h2>התראות</h2><ul class="alerts">' + alerts.join('') + '</ul></section>' : '';
-      return '<div class="grid">' + hero + nextCard + '</div>' + alertCard + '<div class="grid">' + indexCard + timeline + '</div>';
+      var et = expTotals();
+      var budgetCard = '<section class="card"><div class="row between"><h2>תקציב כולל</h2><a class="btn btn-ghost btn-sm" href="#/expenses">להוצאות</a></div>' +
+        '<div class="stats">' + stat('קבלן', M(commitment)) + stat('הוצאות נוספות', M(et.value)) + stat('סה״כ צפוי', M(commitment + et.value)) +
+        stat('שולם הכול', M(paid + et.paid)) + '</div>' +
+        (et.budget ? '<div class="muted small">תקציב הוצאות נוספות: ' + M(et.budget) + (et.value > et.budget ? ' · <span class="warn-text">חריגה ' + M(et.value - et.budget) + '</span>' : ' · יתרה ' + M(et.budget - et.value)) + '</div>' : '') + '</section>';
+      return '<div class="grid">' + hero + nextCard + '</div>' + alertCard + '<div class="grid">' + budgetCard + donutCard(commitment) + '</div>' + '<div class="grid">' + indexCard + timeline + '</div>';
     }
   };
 
@@ -1149,6 +1188,187 @@
     out.innerHTML = kv('חלק לא צמוד', C.fmtMoney(A - linked)) + kv('חלק צמוד', C.fmtMoney(linked)) +
       kv('שינוי במדד', (rate * 100).toFixed(3) + '%') + kv('הצמדה', C.fmtMoney(adj)) +
       '<div class="kv total"><span class="k">סה״כ</span><b class="num">' + C.fmtMoney(A + adj) + '</b></div>';
+  }
+
+  // ---------- הוצאות נוספות ----------
+  function catById(id) { return state.categories.filter(function (c) { return c.id === id; })[0]; }
+  function expById(id) { return state.expenses.filter(function (e) { return e.id === id; })[0]; }
+  function expPays(id) { return state.payments.filter(function (p) { return p.type === 'expense' && p.expenseId === id; }); }
+  function expRows(catId) {
+    return state.expenses.filter(function (e) { return !catId || e.categoryId === catId; }).map(function (e) {
+      return { e: e, x: C.expenseCalc(e, expPays(e.id)) };
+    });
+  }
+  function catAgg(c) {
+    var rows = expRows(c.id);
+    var a = { budget: C.num(c.budget), commit: 0, est: 0, value: 0, paid: 0, count: rows.length };
+    rows.forEach(function (r) { a.commit += r.x.commit; a.est += r.x.commit > 0 ? 0 : r.x.value; a.value += r.x.value; a.paid += r.x.paid; });
+    a.over = a.budget > 0 && a.value > a.budget + 0.5;
+    a.left = a.budget - a.value;
+    return a;
+  }
+  function expStatusBadge(st) {
+    var cls = { planning: 'muted-b', quote: 'muted-b', committed: 'info', partial: 'warn', paid: 'ok', cancelled: 'muted-b' }[st];
+    return '<span class="badge ' + cls + '">' + C.EXP_STATUS[st] + '</span>';
+  }
+  function expTotals() {
+    var t = { budget: 0, commit: 0, value: 0, paid: 0 };
+    state.categories.forEach(function (c) { var a = catAgg(c); t.budget += a.budget; t.commit += a.commit; t.value += a.value; t.paid += a.paid; });
+    return t;
+  }
+
+  function expensesView() {
+    var t = expTotals();
+    var list = state.categories.map(function (c) {
+      var a = catAgg(c);
+      var pct = a.budget > 0 ? Math.min(100, a.value / a.budget * 100) : (a.value > 0 ? 100 : 0);
+      return '<li><a class="cat" href="#/category/' + encodeURIComponent(c.id) + '">' +
+        '<div class="row between"><b>' + esc(c.name) + '</b><span class="num">' + M(a.value) + (a.budget ? ' <span class="muted small">מתוך ' + M(a.budget) + '</span>' : '') + '</span></div>' +
+        '<div class="bar thin"><div style="width:' + pct.toFixed(1) + '%' + (a.over ? ';background:var(--accent)' : '') + '"></div></div>' +
+        '<div class="row between small muted"><span>' + a.count + ' פריטים' + (a.paid ? ' · שולם ' + M(a.paid) : '') + '</span>' +
+        (a.over ? '<span class="badge warn">חריגה ' + M(-a.left) + '</span>' : (a.budget ? '<span>יתרה ' + M(a.left) + '</span>' : '<span>ללא תקציב</span>')) + '</div></a></li>';
+    }).join('');
+    return '<section class="card"><div class="stats">' + stat('תקציב', M(t.budget)) + stat('צפי הוצאות', M(t.value)) + stat('התחייבויות', M(t.commit)) + stat('שולם', M(t.paid)) + '</div>' + vatNote() +
+      '<p class="hint">"צפי הוצאות" = סכום ההתחייבות, ואם אין — ההערכה.</p>' +
+      '<div class="row"><button type="button" class="btn btn-primary" data-action="new-exp">הוצאה חדשה</button>' +
+      '<button type="button" class="btn btn-secondary" data-action="new-pay" data-type="expense">רישום תשלום</button>' +
+      '<button type="button" class="btn btn-ghost" data-action="new-cat">קטגוריה חדשה</button></div></section>' +
+      '<section class="card"><h2>קטגוריות</h2><ul class="cats">' + list + '</ul></section>';
+  }
+
+  function categoryView(param) {
+    var c = catById(param);
+    if (!c) return '<section class="card"><div class="empty"><b>הקטגוריה לא נמצאה</b><a class="btn btn-secondary" href="#/expenses">חזרה</a></div></section>';
+    $('view-title').textContent = c.name;
+    var a = catAgg(c);
+    var items = expRows(c.id).map(function (r) {
+      var e = r.e, x = r.x;
+      return '<li class="item"><div><b>' + esc(e.name) + '</b>' + (e.supplier ? ' · <span class="muted small">' + esc(e.supplier) + '</span>' : '') +
+        '<div class="badges">' + expStatusBadge(x.status) + '</div>' +
+        '<div class="muted small">' + (x.commit ? 'התחייבות ' + M(x.commit) : (x.est ? 'הערכה ' + M(x.est) : '')) + (x.paid ? ' · שולם ' + M(x.paid) : '') + (x.remaining ? ' · יתרה ' + M(x.remaining) : '') + '</div>' +
+        (e.notes ? '<div class="muted small">' + esc(e.notes) + '</div>' : '') + '</div>' +
+        '<div class="item-side"><b class="num">' + M(x.value) + '</b><span class="tools">' +
+        (x.status !== 'cancelled' ? '<button type="button" class="icon-btn" data-action="new-pay" data-type="expense" data-exp="' + esc(e.id) + '" aria-label="רישום תשלום">' + icon('pay', 18) + '</button>' : '') +
+        '<button type="button" class="icon-btn" data-action="edit-exp" data-id="' + esc(e.id) + '" aria-label="עריכה">' + icon('edit', 18) + '</button>' +
+        '<button type="button" class="icon-btn danger" data-action="del-exp" data-id="' + esc(e.id) + '" aria-label="מחיקה">' + icon('trash', 18) + '</button></span></div></li>';
+    }).join('') || '<li class="muted small">אין עדיין פריטים בקטגוריה.</li>';
+    var pays = state.payments.filter(function (p) { return p.type === 'expense' && expById(p.expenseId) && expById(p.expenseId).categoryId === c.id; })
+      .sort(function (x, y) { return x.date < y.date ? 1 : -1; });
+    var payList = pays.map(function (p) {
+      return '<li class="item"><div><b>' + esc(expById(p.expenseId).name) + '</b><div class="muted small">' + C.fmtDate(p.date) + ' · ' + esc(methodLabel(p.method)) + '</div></div>' +
+        '<div class="item-side"><b class="num">' + M(C.num(p.amount)) + '</b><span class="tools">' +
+        '<button type="button" class="icon-btn" data-action="edit-pay" data-id="' + esc(p.id) + '" aria-label="עריכת תשלום">' + icon('edit', 18) + '</button>' +
+        '<button type="button" class="icon-btn danger" data-action="del-pay" data-id="' + esc(p.id) + '" aria-label="מחיקת תשלום">' + icon('trash', 18) + '</button></span></div></li>';
+    }).join('') || '<li class="muted small">עדיין לא נרשמו תשלומים.</li>';
+    return '<a class="back" href="#/expenses">' + icon('right', 18) + 'הוצאות נוספות</a>' +
+      '<section class="card"><div class="stats">' + stat('תקציב', a.budget ? M(a.budget) : '<a href="#" data-action="edit-cat" data-id="' + esc(c.id) + '">להגדרה</a>') +
+      stat('צפי הוצאות', M(a.value)) + stat('שולם', M(a.paid)) + stat(a.over ? 'חריגה' : 'יתרת תקציב', a.budget ? M(Math.abs(a.left)) : '—') + '</div>' + vatNote() +
+      '<div class="row"><button type="button" class="btn btn-primary" data-action="new-exp" data-cat="' + esc(c.id) + '">הוצאה חדשה</button>' +
+      '<button type="button" class="btn btn-secondary" data-action="edit-cat" data-id="' + esc(c.id) + '">עריכת קטגוריה</button>' +
+      '<button type="button" class="btn btn-ghost danger-text" data-action="del-cat" data-id="' + esc(c.id) + '">מחיקה</button></div></section>' +
+      '<section class="card"><h2>פריטים</h2><ul class="items">' + items + '</ul></section>' +
+      '<section class="card"><h2>תשלומים</h2><ul class="items">' + payList + '</ul></section>';
+  }
+
+  // חלונות: קטגוריה והוצאה
+  function openCategory(id) {
+    var c = id ? catById(id) : null;
+    form = { kind: 'cat', data: c ? clone(c) : { name: '', budget: '' } };
+    openModal(c ? 'עריכת קטגוריה' : 'קטגוריה חדשה', '<div class="fields">' +
+      ff('name', 'שם הקטגוריה', { required: true }) + ff('budget', 'תקציב מתוכנן (₪, כולל מע״מ)', { type: 'number', step: 'any', inputmode: 'decimal' }) +
+      '</div><div class="error-box" id="m-err" hidden></div><div class="modal-actions"><button type="button" class="btn btn-ghost" data-action="modal-close">ביטול</button><button type="button" class="btn btn-primary" data-action="save-cat">שמירה</button></div>');
+  }
+  function saveCategory(btn) {
+    var d = form.data;
+    if (!String(d.name).trim()) { showErrors('m-err', ['יש להזין שם']); return; }
+    var obj = { id: d.id || uid(), order: d.order || (state.categories.length + 1), name: String(d.name).trim(), budget: C.num(d.budget), updatedAt: nowIso(), _row: d._row };
+    btn.disabled = true;
+    withSync(upsertRow('ExpenseCategories', obj).then(loadCategories), 'הקטגוריה נשמרה').then(function () { closeModal(); rerender(); })
+      .catch(handleError).then(function () { btn.disabled = false; });
+  }
+  function deleteCategory(id) {
+    var c = catById(id); if (!c) return;
+    if (state.expenses.some(function (e) { return e.categoryId === id; })) { toast('יש פריטים בקטגוריה. יש למחוק או להעביר אותם קודם.', 'err'); return; }
+    if (!confirm('למחוק את הקטגוריה "' + c.name + '"?')) return;
+    withSync(deleteRow('ExpenseCategories', c._row).then(loadCategories), 'הקטגוריה נמחקה').then(function () { location.hash = '#/expenses'; rerender(); }).catch(handleError);
+  }
+  var EXP_MANUAL = [['planning', 'בתכנון'], ['quote', 'הצעת מחיר'], ['committed', 'התחייבות'], ['cancelled', 'בוטל']];
+  function openExpense(catId, id) {
+    var e = id ? expById(id) : null;
+    form = { kind: 'exp', data: e ? clone(e) : { categoryId: catId || (state.categories[0] || {}).id, name: '', supplier: '', estimate: '', commitment: '', status: 'planning', startDate: '', endDate: '', notes: '' } };
+    if (['partial', 'paid'].indexOf(form.data.status) >= 0) form.data.status = 'committed';
+    openModal(e ? 'עריכת הוצאה' : 'הוצאה חדשה', '<div class="fields">' +
+      ff('categoryId', 'קטגוריה', { type: 'select', options: state.categories.map(function (c) { return [c.id, c.name]; }), required: true }) +
+      ff('name', 'תיאור', { required: true, placeholder: 'לדוגמה: ארון מטבח' }) +
+      ff('supplier', 'ספק') +
+      ff('status', 'סטטוס', { type: 'select', options: EXP_MANUAL, hint: '"שולם חלקית" ו"שולם" מתעדכנים לבד לפי התשלומים.' }) +
+      ff('estimate', 'הערכה / הצעת מחיר (₪)', { type: 'number', step: 'any', inputmode: 'decimal' }) +
+      ff('commitment', 'סכום התחייבות (₪)', { type: 'number', step: 'any', inputmode: 'decimal', hint: 'הסכום שסוכם עם הספק.' }) +
+      ff('startDate', 'תאריך הזמנה', { type: 'date' }) + ff('endDate', 'תאריך אספקה', { type: 'date' }) +
+      ff('notes', 'הערות', { wide: true }) +
+      '</div><div class="error-box" id="m-err" hidden></div><div class="modal-actions"><button type="button" class="btn btn-ghost" data-action="modal-close">ביטול</button><button type="button" class="btn btn-primary" data-action="save-exp">שמירה</button></div>');
+  }
+  function saveExpense(btn) {
+    var d = form.data, errs = [];
+    if (!catById(d.categoryId)) errs.push('יש לבחור קטגוריה');
+    if (!String(d.name).trim()) errs.push('יש להזין תיאור');
+    showErrors('m-err', errs); if (errs.length) return;
+    var obj = { id: d.id || uid(), categoryId: d.categoryId, name: String(d.name).trim(), supplier: d.supplier, estimate: d.estimate === '' ? '' : C.num(d.estimate),
+      commitment: d.commitment === '' ? '' : C.num(d.commitment), status: d.status, startDate: d.startDate, endDate: d.endDate, notes: d.notes, updatedAt: nowIso(), _row: d._row };
+    btn.disabled = true;
+    withSync(upsertRow('Expenses', obj).then(loadExpenses), 'ההוצאה נשמרה').then(function () {
+      logActivity(d.id ? 'update' : 'create', 'Expenses', obj.name); closeModal(); rerender();
+    }).catch(handleError).then(function () { btn.disabled = false; });
+  }
+  function deleteExpense(id) {
+    var e = expById(id); if (!e) return;
+    if (expPays(id).length) { toast('יש תשלומים לפריט הזה. יש למחוק אותם קודם.', 'err'); return; }
+    if (!confirm('למחוק את "' + e.name + '"?')) return;
+    withSync(deleteRow('Expenses', e._row).then(loadExpenses), 'נמחק').then(rerender).catch(handleError);
+  }
+  function expOptions() {
+    var opts = [];
+    state.categories.forEach(function (c) {
+      expRows(c.id).forEach(function (r) { if (r.x.status !== 'cancelled') opts.push([r.e.id, c.name + ' — ' + r.e.name]); });
+    });
+    return opts;
+  }
+
+  // תרשים טבעת: התחייבויות לפי קטגוריה (כולל קבלן)
+  var hiddenSlices = {};
+  var SERIES = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#6250d6', '#e34948'];
+  function donutCard(contractorTotal) {
+    var items = [{ id: '__c', name: 'קבלן', v: contractorTotal }];
+    state.categories.forEach(function (c) { var a = catAgg(c); if (a.value > 0) items.push({ id: c.id, name: c.name, v: a.value }); });
+    var main = items.slice(0, 1).concat(items.slice(1).sort(function (a, b) { return b.v - a.v; }));
+    // עד 7 פלחים + "אחר"
+    if (main.length > 8) {
+      var rest = main.slice(7);
+      main = main.slice(0, 7).concat([{ id: '__o', name: 'אחר (' + rest.length + ')', v: rest.reduce(function (a, x) { return a + x.v; }, 0), gray: true }]);
+    }
+    main.forEach(function (x, i) { x.color = x.gray ? '#8a8984' : SERIES[i]; });
+    var shown = main.filter(function (x) { return !hiddenSlices[x.id]; });
+    var total = shown.reduce(function (a, x) { return a + x.v; }, 0);
+    var R = 70, r = 46, cx = 90, cy = 90, ang = -Math.PI / 2, gap = shown.length > 1 ? 0.02 : 0;
+    var paths = shown.map(function (x) {
+      var frac = total ? x.v / total : 0, a0 = ang + gap / 2, a1 = ang + frac * 2 * Math.PI - gap / 2;
+      ang += frac * 2 * Math.PI;
+      if (frac >= 0.999) return '<circle cx="' + cx + '" cy="' + cy + '" r="' + ((R + r) / 2) + '" fill="none" stroke="' + x.color + '" stroke-width="' + (R - r) + '"><title>' + esc(x.name) + ': ' + M(x.v) + '</title></circle>';
+      if (a1 <= a0) return '';
+      var large = a1 - a0 > Math.PI ? 1 : 0;
+      var p = function (rad, a) { return (cx + rad * Math.cos(a)).toFixed(2) + ' ' + (cy + rad * Math.sin(a)).toFixed(2); };
+      return '<path d="M' + p(R, a0) + ' A' + R + ' ' + R + ' 0 ' + large + ' 1 ' + p(R, a1) + ' L' + p(r, a1) + ' A' + r + ' ' + r + ' 0 ' + large + ' 0 ' + p(r, a0) + 'Z" fill="' + x.color + '"><title>' + esc(x.name) + ': ' + M(x.v) + ' (' + Math.round(x.v / total * 100) + '%)</title></path>';
+    }).join('');
+    var legend = main.map(function (x) {
+      var off = !!hiddenSlices[x.id];
+      return '<li><button type="button" class="leg' + (off ? ' off' : '') + '" data-action="toggle-slice" data-id="' + esc(x.id) + '" aria-pressed="' + !off + '">' +
+        '<span class="sw" style="background:' + x.color + '"></span><span class="leg-name">' + esc(x.name) + '</span>' +
+        '<span class="num">' + M(x.v) + '</span><span class="muted small num">' + (off || !total ? '' : Math.round(x.v / total * 100) + '%') + '</span></button></li>';
+    }).join('');
+    return '<section class="card"><h2>התחייבויות לפי תחום</h2><div class="donut-wrap">' +
+      '<svg viewBox="0 0 180 180" width="180" height="180" role="img" aria-label="תרשים התחייבויות לפי תחום">' + paths +
+      '<text x="90" y="86" text-anchor="middle" class="donut-k">סה״כ</text><text x="90" y="106" text-anchor="middle" class="donut-v">' + esc(M(total)) + '</text></svg>' +
+      '<ul class="legend">' + legend + '</ul></div><p class="hint">לחיצה על שורה מסתירה או מחזירה אותה לתרשים.</p></section>';
   }
 
   // ---------- טפסי דרישה ותשלום (חלון) ----------
@@ -1279,9 +1499,15 @@
     }).catch(handleError).then(function () { btn.disabled = false; });
   }
 
-  function openPayment(stageId, payId) {
+  function openPayment(stageId, payId, type, expId) {
     var rows = ledger();
     var existing = payId ? state.payments.filter(function (p) { return p.id === payId; })[0] : null;
+    if ((existing && existing.type === 'expense') || (!existing && type === 'expense')) {
+      form = { kind: 'pay', data: existing ? clone(existing) : { type: 'expense', stageId: '', requestId: '', expenseId: expId || '', date: todayIso(), amount: '', method: 'transfer', fundingSource: '', reference: '', notes: '' } };
+      if (!existing) { if (!form.data.expenseId) { var o = expOptions()[0]; form.data.expenseId = o ? o[0] : ''; } prefillExpAmount(); }
+      renderPaymentForm(existing ? 'עריכת תשלום' : 'רישום תשלום');
+      return;
+    }
     var sid = existing ? existing.stageId : (stageId || ((rows.filter(function (r) { return r.st.status !== 'paid'; })[0] || rows[0]) || {}).stageId);
     form = { kind: 'pay', data: existing ? clone(existing) : { type: 'contractor', stageId: sid, requestId: '', date: todayIso(), amount: '', method: 'transfer', fundingSource: '', reference: '', notes: '' } };
     if (!existing) {
@@ -1289,14 +1515,38 @@
       if (open.length) form.data.requestId = open[open.length - 1].id;
       var row = findStage(sid); if (row && row.st.remaining > 0) form.data.amount = String(C.round2(row.st.remaining));
     }
-    renderPaymentForm(existing ? 'עריכת תשלום' : 'רישום תשלום לקבלן');
+    renderPaymentForm(existing ? 'עריכת תשלום' : 'רישום תשלום');
+  }
+  function prefillExpAmount() {
+    var e = expById(form.data.expenseId); if (!e) return;
+    var x = C.expenseCalc(e, expPays(e.id));
+    form.data.amount = x.remaining > 0 ? String(x.remaining) : '';
   }
   function renderPaymentForm(title) {
+    var typeSw = form.data.id ? '' : '<div class="seg" role="radiogroup" aria-label="סוג תשלום">' +
+      '<button type="button" role="radio" aria-checked="' + (form.data.type === 'contractor') + '" data-action="pay-type" data-type="contractor">קבלן</button>' +
+      '<button type="button" role="radio" aria-checked="' + (form.data.type === 'expense') + '" data-action="pay-type" data-type="expense">הוצאה נוספת</button></div>';
+    if (form.data.type === 'expense') {
+      var e = expById(form.data.expenseId), x = e ? C.expenseCalc(e, expPays(e.id)) : null;
+      var eo = expOptions();
+      openModal(title, typeSw + (eo.length ? '<div class="fields">' +
+        ff('expenseId', 'הוצאה', { type: 'select', options: eo, required: true, wide: true }) +
+        ff('date', 'תאריך התשלום', { type: 'date', required: true }) +
+        ff('amount', 'סכום ששולם (₪, כולל מע״מ)', { type: 'number', step: 'any', inputmode: 'decimal', required: true, hint: x && x.commit ? 'יתרה להתחייבות: ' + C.fmtMoney(x.remaining) : '' }) +
+        ff('method', 'אמצעי תשלום', { type: 'select', options: METHODS }) +
+        ff('fundingSource', 'מקור מימון', { list: 'funding-list', placeholder: 'הון עצמי / משכנתא…' }) +
+        ff('reference', 'אסמכתא') + ff('notes', 'הערות', { wide: true }) +
+        '</div><datalist id="funding-list"><option value="הון עצמי"><option value="משכנתא"><option value="הלוואה"></datalist>' +
+        '<div class="error-box" id="m-err" hidden></div>' +
+        '<div class="modal-actions"><button type="button" class="btn btn-ghost" data-action="modal-close">ביטול</button><button type="button" class="btn btn-primary" data-action="save-pay">שמירה</button></div>'
+        : '<p class="muted">עדיין אין הוצאות. קודם צריך להוסיף הוצאה, ואז לרשום לה תשלום.</p><div class="modal-actions"><button type="button" class="btn btn-primary" data-action="new-exp">הוצאה חדשה</button></div>'));
+      return;
+    }
     var reqOpts = [['', 'ללא שיוך לדרישה']].concat(reqsOf(form.data.stageId).map(function (q) {
       return [q.id, 'דרישה' + (q.number ? ' ' + q.number : '') + ' · ' + C.fmtDate(q.receivedDate) + ' · ' + C.fmtMoney(C.num(q.finalAmount))];
     }));
     var row = findStage(form.data.stageId);
-    var html = '<div class="fields">' +
+    var html = typeSw + '<div class="fields">' +
       ff('stageId', 'אבן דרך', { type: 'select', options: stageOptions(), required: true, wide: true }) +
       ff('requestId', 'שיוך לדרישה', { type: 'select', options: reqOpts }) +
       ff('date', 'תאריך התשלום', { type: 'date', required: true }) +
@@ -1312,6 +1562,19 @@
   }
   function savePayment(btn) {
     var d = form.data, errs = [];
+    if (d.type === 'expense') {
+      if (!expById(d.expenseId)) errs.push('יש לבחור הוצאה');
+      if (!d.date) errs.push('יש להזין תאריך תשלום');
+      if (!(C.num(d.amount) > 0)) errs.push('יש להזין סכום');
+      showErrors('m-err', errs); if (errs.length) return;
+      var eo = { id: d.id || uid(), type: 'expense', stageId: '', requestId: '', expenseId: d.expenseId, date: d.date, amount: C.round2(C.num(d.amount)),
+        method: d.method, fundingSource: d.fundingSource, reference: d.reference, notes: d.notes, updatedAt: nowIso(), _row: d._row };
+      btn.disabled = true;
+      withSync(upsertRow('Payments', eo).then(loadPayments), 'התשלום נשמר').then(function () {
+        logActivity(d.id ? 'update' : 'create', 'Payments', 'expense ' + eo.amount); closeModal(); rerender();
+      }).catch(handleError).then(function () { btn.disabled = false; });
+      return;
+    }
     if (!findStage(d.stageId)) errs.push('יש לבחור אבן דרך');
     if (!d.date) errs.push('יש להזין תאריך תשלום');
     if (!(C.num(d.amount) > 0)) errs.push('יש להזין סכום');
@@ -1344,6 +1607,9 @@
       if (k === 'receivedDate') autofillIndex();
       refreshIndexHint();
       updateRequestCalc();
+    } else if (form.kind === 'pay' && k === 'expenseId') {
+      prefillExpAmount(); var am = $('m-amount'); if (am) am.value = form.data.amount;
+      var e = expById(form.data.expenseId), x = e ? C.expenseCalc(e, expPays(e.id)) : null, h = $('mh-amount'); if (h) h.textContent = x && x.commit ? 'יתרה להתחייבות: ' + C.fmtMoney(x.remaining) : '';
     } else if (form.kind === 'pay' && k === 'stageId') {
       form.data.requestId = ''; var row = findStage(t.value);
       form.data.amount = row && row.st.remaining > 0 ? String(C.round2(row.st.remaining)) : '';
@@ -1433,7 +1699,22 @@
       case 'edit-req': openRequest(null, btn.getAttribute('data-id')); return;
       case 'del-req': deleteRequest(btn.getAttribute('data-id')); return;
       case 'save-req': saveRequest(btn); return;
-      case 'new-pay': openPayment(btn.getAttribute('data-stage')); return;
+      case 'new-pay': openPayment(btn.getAttribute('data-stage'), null, btn.getAttribute('data-type'), btn.getAttribute('data-exp')); return;
+      case 'pay-type': {
+        var keep = form ? { date: form.data.date, method: form.data.method, fundingSource: form.data.fundingSource } : {};
+        openPayment(null, null, btn.getAttribute('data-type'));
+        Object.keys(keep).forEach(function (k) { form.data[k] = keep[k]; });
+        renderPaymentForm('רישום תשלום'); return;
+      }
+      case 'new-exp': openExpense(btn.getAttribute('data-cat')); return;
+      case 'edit-exp': openExpense(null, btn.getAttribute('data-id')); return;
+      case 'del-exp': deleteExpense(btn.getAttribute('data-id')); return;
+      case 'save-exp': saveExpense(btn); return;
+      case 'new-cat': openCategory(); return;
+      case 'edit-cat': openCategory(btn.getAttribute('data-id')); return;
+      case 'del-cat': deleteCategory(btn.getAttribute('data-id')); return;
+      case 'save-cat': saveCategory(btn); return;
+      case 'toggle-slice': { var sid = btn.getAttribute('data-id'); hiddenSlices[sid] = !hiddenSlices[sid]; softRerender(); return; }
       case 'edit-pay': openPayment(null, btn.getAttribute('data-id')); return;
       case 'del-pay': deletePayment(btn.getAttribute('data-id')); return;
       case 'save-pay': savePayment(btn); return;
