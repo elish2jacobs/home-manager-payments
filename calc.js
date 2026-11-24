@@ -234,24 +234,28 @@
   var DEFAULT_CATEGORIES = ['מטבח', 'גינה ופיתוח חוץ', 'נגרות', 'שינויי דיירים', 'הוצאות משפטיות', 'הוצאות רכישה ומימון', 'ריהוט', 'תאורה', 'מוצרי חשמל', 'מיזוג אוויר', 'תקשורת ובית חכם', 'אלומיניום ותריסים', 'שונות'];
   var EXP_STATUS = { planning: 'בתכנון', quote: 'הצעת מחיר', committed: 'התחייבות', partial: 'שולם חלקית', paid: 'שולם', cancelled: 'בוטל' };
   // מצב הוצאה: בוטל ידני גובר; אחרת לפי תשלומים מול ההתחייבות; אחרת המצב הידני
+  // הוצאה: שדה סכום אחד + סטטוס. בתכנון / הצעת מחיר — נכנס לצפי בלבד; התחייבות — גם ל"לתשלום".
+  // תשלום על פריט שלא בהתחייבות הופך אותו להתחייבות (מי ששילם — התחייב).
+  function expenseAmount(e) {
+    if (e.amount !== '' && e.amount != null && isFinite(parseFloat(e.amount))) return num(e.amount);
+    return num(e.commitment) > 0 ? num(e.commitment) : num(e.estimate); // נתונים מגרסה קודמת
+  }
   function expenseCalc(e, pays) {
     var paid = round2((pays || []).reduce(function (a, p) { return a + num(p.amount); }, 0));
-    var commit = num(e.commitment), est = num(e.estimate);
-    var status = e.status || 'planning';
-    if (status !== 'cancelled') {
-      if (commit > 0 && paid >= commit - 0.5) status = 'paid';
-      else if (paid > 0) status = 'partial';
-      else if (commit > 0 && (status === 'planning' || status === 'quote')) status = 'committed';
-    }
-    var value = status === 'cancelled' ? 0 : (commit > 0 ? commit : est);
-    return { paid: paid, commit: status === 'cancelled' ? 0 : commit, est: est, value: value, remaining: round2(Math.max(0, (commit > 0 ? commit : 0) - paid)), status: status };
+    var amount = expenseAmount(e);
+    var st = e.status || 'planning';
+    if (st === 'cancelled') return { amount: amount, paid: paid, value: paid, commit: 0, remaining: 0, status: 'cancelled', over: false };
+    var committed = st === 'committed' || st === 'partial' || st === 'paid' || paid > 0 || (!e.amount && num(e.commitment) > 0);
+    var value = round2(Math.max(amount, paid));
+    var status = !committed ? (st === 'quote' ? 'quote' : 'planning') : (paid > 0 && paid >= amount - 0.5 ? 'paid' : (paid > 0 ? 'partial' : 'committed'));
+    return { amount: amount, paid: paid, value: value, commit: committed ? value : 0, remaining: committed ? round2(Math.max(0, amount - paid)) : 0, status: status, over: paid > amount + 0.5 };
   }
 
   var api = {
     TRACKS: TRACKS, DEFAULT_STAGES: DEFAULT_STAGES, DEFAULT_T3: DEFAULT_T3, DEFAULT_SETTINGS: DEFAULT_SETTINGS,
     num: num, round2: round2, parseDate: parseDate, isoDate: isoDate, addMonths: addMonths,
     fmtDate: fmtDate, fmtMoney: fmtMoney, fmtPct: fmtPct,
-    effectivePrice: effectivePrice, schedule: schedule, requestCalc: requestCalc, stageStatus: stageStatus, STATUS_LABEL: STATUS_LABEL, HE_MONTHS: HE_MONTHS, DEFAULT_CATEGORIES: DEFAULT_CATEGORIES, EXP_STATUS: EXP_STATUS, expenseCalc: expenseCalc, DEFAULT_SCENARIOS: DEFAULT_SCENARIOS, projectYear: projectYear, yearRate: yearRate, forecastIndex: forecastIndex, monthName: monthName, knownMonthFor: knownMonthFor, nextPublication: nextPublication, ymKey: ymKey, validateStages: validateStages, sumPct: sumPct
+    effectivePrice: effectivePrice, schedule: schedule, requestCalc: requestCalc, stageStatus: stageStatus, STATUS_LABEL: STATUS_LABEL, HE_MONTHS: HE_MONTHS, DEFAULT_CATEGORIES: DEFAULT_CATEGORIES, EXP_STATUS: EXP_STATUS, expenseCalc: expenseCalc, expenseAmount: expenseAmount, DEFAULT_SCENARIOS: DEFAULT_SCENARIOS, projectYear: projectYear, yearRate: yearRate, forecastIndex: forecastIndex, monthName: monthName, knownMonthFor: knownMonthFor, nextPublication: nextPublication, ymKey: ymKey, validateStages: validateStages, sumPct: sumPct
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.HMCalc = api;
 })(this);
