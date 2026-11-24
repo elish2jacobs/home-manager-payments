@@ -40,7 +40,7 @@
     stages: [],       // ContractorStages
     requests: [], payments: [], sheetGids: {},
     cbs: null,        // data/index.json
-    scenarios: [], categories: [], expenses: [], docs: [], folders: {}
+    scenarios: [], categories: [], expenses: [], docs: [], folders: {}, journal: [], contacts: [], tasks: []
   };
   var tokenClient = null;
   var pendingToken = null;   // {resolve,reject,promise}
@@ -445,7 +445,7 @@
     state.rootId = proj.root.id; state.rootLink = proj.root.webViewLink;
     state.sheetId = proj.sheet.id; state.sheetLink = proj.sheet.webViewLink;
     loading('טוען נתונים…');
-    return ensureHeaders().then(function () { return Promise.all([loadSettings(), loadStages(), loadRequests(), loadPayments(), loadCbs(), loadScenarios(), loadExpenses(), loadDocs()]); }).then(loadCategories).then(function () {
+    return ensureHeaders().then(function () { return Promise.all([loadSettings(), loadStages(), loadRequests(), loadPayments(), loadCbs(), loadScenarios(), loadExpenses(), loadDocs(), loadJournal(), loadContacts(), loadTasks()]); }).then(loadCategories).then(function () {
       syncIndexHistory();
       show('screen-app');
       renderUser();
@@ -482,6 +482,12 @@
     edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/>', right: '<path d="m9 18 6-6-6-6"/>',
     clip: '<path d="M21 11.5 12.5 20a5 5 0 0 1-7-7L14 4.5a3.5 3.5 0 0 1 5 5L10.5 18a2 2 0 0 1-3-3L15 7.5"/>',
     image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 17-5-5-9 8"/>',
+    video: '<rect x="3" y="6" width="13" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3"/>',
+    camera: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
+    phone: '<path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/>',
+    chat: '<path d="M4 20l1.5-4A8 8 0 1 1 9 19.5z"/>',
+    mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
+    tasks: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 3 3 5-6"/>',
     menu: '<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>'
   };
   var ROUTES = [
@@ -490,8 +496,10 @@
     { id: 'expenses', title: 'הוצאות נוספות', short: 'הוצאות', icon: 'expenses', mobile: true },
     { id: 'payments', title: 'מרכז תשלומים', short: 'תשלומים', icon: 'pay', mobile: true },
     { id: 'calculator', title: 'מחשבון מדד', icon: 'calc' },
+    { id: 'journal', title: 'יומן תיעוד', icon: 'camera' },
     { id: 'documents', title: 'מסמכים', icon: 'docs' },
     { id: 'contacts', title: 'אנשי קשר', icon: 'contacts' },
+    { id: 'tasks', title: 'משימות', icon: 'tasks' },
     { id: 'settings', title: 'הגדרות', icon: 'settings' },
     { id: 'more', title: 'עוד', icon: 'menu', mobile: true, mobileOnly: true }
   ];
@@ -1042,6 +1050,9 @@
     },
     expenses: function () { if (!isSetup()) return needSetupCard(); return expensesView(); },
     documents: function () { return documentsView(); },
+    journal: function () { return journalView(); },
+    contacts: function () { return contactsView(); },
+    tasks: function () { return tasksView(); },
     category: function (r, param) { if (!isSetup()) return needSetupCard(); return categoryView(param); },
     more: function () {
       return '<section class="card"><ul class="more-list">' + ROUTES.filter(function (r) { return !r.mobile; }).map(function (r) {
@@ -1124,6 +1135,9 @@
       var alerts = [];
       overdue.forEach(function (r) { alerts.push('<li><a href="#/stage/' + encodeURIComponent(r.stageId) + '"><span class="badge warn">באיחור</span> ' + esc(r.name) + ' · צפוי היה ב-' + C.fmtDate(r.date) + '</a></li>'); });
       openReqs.filter(function (r) { return !r.st.overdue; }).forEach(function (r) { alerts.push('<li><a href="#/stage/' + encodeURIComponent(r.stageId) + '"><span class="badge info">דרישה פתוחה</span> ' + esc(r.name) + ' · ' + M(r.st.remaining) + '</a></li>'); });
+      state.tasks.filter(taskOverdue).forEach(function (t) { alerts.push('<li><a href="#/tasks"><span class="badge warn">משימה באיחור</span> ' + esc(t.title) + ' · יעד ' + C.fmtDate(t.dueDate) + '</a></li>'); });
+      var soon = C.isoDate(C.addMonths(new Date(), 0)); var in3 = new Date(); in3.setDate(in3.getDate() + 3); in3 = C.isoDate(in3);
+      state.tasks.filter(function (t) { return t.status !== 'done' && t.dueDate && t.dueDate >= soon && t.dueDate <= in3; }).forEach(function (t) { alerts.push('<li><a href="#/tasks"><span class="badge info">משימה קרובה</span> ' + esc(t.title) + ' · ' + C.fmtDate(t.dueDate) + '</a></li>'); });
       state.categories.forEach(function (c) { var a = catAgg(c); if (a.over) alerts.push('<li><a href="#/category/' + encodeURIComponent(c.id) + '"><span class="badge warn">חריגה</span> ' + esc(c.name) + ' · ' + M(a.value - a.budget) + ' מעל התקציב</a></li>'); });
       if (t1 && !s.baseIndex) alerts.push('<li><a href="#/settings"><span class="badge warn">חסר</span> מדד הבסיס לא הוזן</a></li>');
       else if (t1 && state.cbs && !contractFactor()) alerts.push('<li><a href="#/settings"><span class="badge warn">חסר</span> חודש מדד הבסיס — נדרש להמרת מדדי הלמ״ס לבסיס החוזה</a></li>');
@@ -1311,19 +1325,20 @@
   }
   var EXP_MANUAL = [['planning', 'בתכנון'], ['quote', 'הצעת מחיר'], ['committed', 'התחייבות'], ['cancelled', 'בוטל']];
   function openExpense(catId, id) {
+    docUpload = { files: [] };
     var e = id ? expById(id) : null;
     form = { kind: 'exp', data: e ? clone(e) : { categoryId: catId || (state.categories[0] || {}).id, name: '', supplier: '', estimate: '', commitment: '', status: 'planning', startDate: '', endDate: '', notes: '' } };
     if (['partial', 'paid'].indexOf(form.data.status) >= 0) form.data.status = 'committed';
     openModal(e ? 'עריכת הוצאה' : 'הוצאה חדשה', '<div class="fields">' +
       ff('categoryId', 'קטגוריה', { type: 'select', options: state.categories.map(function (c) { return [c.id, c.name]; }), required: true }) +
       ff('name', 'תיאור', { required: true, placeholder: 'לדוגמה: ארון מטבח' }) +
-      ff('supplier', 'ספק') +
+      ff('supplier', 'ספק', { list: 'ct-names' }) + contactDatalist() +
       ff('status', 'סטטוס', { type: 'select', options: EXP_MANUAL, hint: '"שולם חלקית" ו"שולם" מתעדכנים לבד לפי התשלומים.' }) +
       ff('estimate', 'הערכה / הצעת מחיר (₪)', { type: 'number', step: 'any', inputmode: 'decimal' }) +
       ff('commitment', 'סכום התחייבות (₪)', { type: 'number', step: 'any', inputmode: 'decimal', hint: 'הסכום שסוכם עם הספק.' }) +
       ff('startDate', 'תאריך הזמנה', { type: 'date' }) + ff('endDate', 'תאריך אספקה', { type: 'date' }) +
       ff('notes', 'הערות', { wide: true }) +
-      '</div><div class="error-box" id="m-err" hidden></div><div class="modal-actions"><button type="button" class="btn btn-ghost" data-action="modal-close">ביטול</button><button type="button" class="btn btn-primary" data-action="save-exp">שמירה</button></div>');
+      '</div>' + attachSection() + '<div class="error-box" id="m-err" hidden></div><div class="modal-actions"><button type="button" class="btn btn-ghost" data-action="modal-close">ביטול</button><button type="button" class="btn btn-primary" data-action="save-exp">שמירה</button></div>');
   }
   function saveExpense(btn) {
     var d = form.data, errs = [];
@@ -1334,7 +1349,8 @@
       commitment: d.commitment === '' ? '' : C.num(d.commitment), status: d.status, startDate: d.startDate, endDate: d.endDate, notes: d.notes, updatedAt: nowIso(), _row: d._row };
     btn.disabled = true;
     withSync(upsertRow('Expenses', obj).then(loadExpenses), 'ההוצאה נשמרה').then(function () {
-      logActivity(d.id ? 'update' : 'create', 'Expenses', obj.name); closeModal(); rerender();
+      logActivity(d.id ? 'update' : 'create', 'Expenses', obj.name);
+      return attachAfterSave('exp:' + obj.id, C.num(obj.commitment) > 0 ? 'invoice' : 'quote').then(function () { closeModal(); rerender(); });
     }).catch(handleError).then(function () { btn.disabled = false; });
   }
   function deleteExpense(id) {
@@ -1410,6 +1426,9 @@
   function linkLabel(key) {
     var p = String(key).split(':'), t = p[0], id = p.slice(1).join(':');
     if (t === 'stage') return 'אבן דרך: ' + stageName(id);
+    if (t === 'contractor') return 'קבלן';
+    if (t === 'cat') { var cc = catById(id); return cc ? 'הוצאות: ' + cc.name : 'קטגוריה (נמחקה)'; }
+    if (t === 'jr') { var jj = state.journal.filter(function (x) { return x.id === id; })[0]; return jj ? 'יומן: ' + jj.title : 'יומן (נמחק)'; }
     if (t === 'req') { var q = state.requests.filter(function (x) { return x.id === id; })[0]; return q ? 'דרישה · ' + stageName(q.stageId) : 'דרישה (נמחקה)'; }
     if (t === 'pay') {
       var pay = state.payments.filter(function (x) { return x.id === id; })[0];
@@ -1422,15 +1441,17 @@
   }
   function docScope(d) {
     var k = docLinks(d)[0] || '';
-    if (/^(stage|req):/.test(k)) return 'contractor';
-    if (/^exp:/.test(k)) return 'expenses';
+    if (/^(stage|req|contractor)/.test(k)) return 'contractor';
+    if (/^(exp|cat):/.test(k)) return 'expenses';
+    if (/^jr:/.test(k)) return 'journal';
     if (/^pay:/.test(k)) { var p = state.payments.filter(function (x) { return 'pay:' + x.id === k; })[0]; return p && p.type === 'expense' ? 'expenses' : 'contractor'; }
     return 'general';
   }
   function docFolderRole(link) {
     var k = link || '';
     if (/^(stage|req):/.test(k)) return 'sub1';
-    if (/^exp:/.test(k)) return 'sub2';
+    if (/^(exp|cat):/.test(k)) return 'sub2';
+    if (/^jr:/.test(k)) return 'sub4';
     if (/^pay:/.test(k)) { var p = state.payments.filter(function (x) { return 'pay:' + x.id === k; })[0]; return p && p.type === 'expense' ? 'sub2' : 'sub1'; }
     return 'sub3';
   }
@@ -1504,57 +1525,95 @@
     return o;
   }
   function openDocUpload(link, type) {
-    form = { kind: 'doc', data: { link: link || '', type: type || (/^req:/.test(link || '') ? 'request' : (/^pay:/.test(link || '') ? 'receipt' : (/^exp:/.test(link || '') ? 'quote' : 'other'))), desc: '' } };
     docUpload = { files: [] };
+    form = { kind: 'doc', data: { name: '', link: link || '', type: type || (/^req:/.test(link || '') ? 'request' : (/^pay:/.test(link || '') ? 'receipt' : (/^exp:/.test(link || '') ? 'quote' : 'other'))), desc: '' } };
     var fixed = !!link;
     openModal('צירוף מסמך', (fixed ? '<div class="badge info" style="align-self:flex-start">' + esc(linkLabel(link)) + '</div>' : '') +
-      '<div class="pick-row"><label class="btn btn-secondary file-btn">בחירת קבצים<input type="file" id="doc-files" multiple accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx"></label>' +
+      '<div class="pick-row"><label class="btn btn-secondary file-btn">בחירת קבצים<input type="file" id="doc-files" multiple accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx"></label>' +
       '<label class="btn btn-secondary file-btn">צילום<input type="file" id="doc-camera" accept="image/*" capture="environment"></label></div>' +
       '<ul class="file-list" id="doc-picked"><li class="muted small">לא נבחרו קבצים.</li></ul>' +
-      '<div class="fields">' + ff('type', 'סוג המסמך', { type: 'select', options: DOC_TYPES }) +
+      '<div class="fields">' + ff('name', 'שם המסמך (אופציונלי)', { placeholder: 'ברירת מחדל: שם הקובץ' }) + ff('type', 'סוג המסמך', { type: 'select', options: DOC_TYPES }) +
       (fixed ? '' : ff('link', 'שיוך', { type: 'select', options: linkOptions(), wide: true })) +
       ff('desc', 'תיאור (אופציונלי)', { wide: true }) + '</div>' +
       '<p class="hint">הקבצים נשמרים ב-Google Drive שלך, בתיקיית הפרויקט. תמונות גדולות מוקטנות אוטומטית.</p>' +
       '<div class="error-box" id="m-err" hidden></div><div class="upload-status small" id="doc-status"></div>' +
       '<div class="modal-actions"><button type="button" class="btn btn-ghost" data-action="modal-close">ביטול</button><button type="button" class="btn btn-primary" data-action="save-doc">העלאה</button></div>');
-    ['doc-files', 'doc-camera'].forEach(function (id) {
-      $(id).addEventListener('change', function (e) {
+  }
+  function fmtSize(n) { n = C.num(n); return n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
+  function renderPicked() {
+    var ul = $('doc-picked'); if (!ul || !docUpload) return;
+    ul.innerHTML = docUpload.files.length ? docUpload.files.map(function (f, i) {
+      return '<li><span>' + esc(f.name) + ' <span class="muted small">' + fmtSize(f.size) + '</span></span><button type="button" class="icon-btn danger" data-action="doc-unpick" data-i="' + i + '" aria-label="הסר">' + icon('trash', 16) + '</button></li>';
+    }).join('') : '<li class="muted small">לא נבחרו קבצים.</li>';
+  }
+  // העלאת קבצים ושמירתם בגיליון. מחזיר מספר קבצים שהועלו; בשגיאה — שומר את מה שהספיק
+  function uploadFiles(files, link, type, desc, st, baseName) {
+    var rows = [], done = 0;
+    var nameFor = function (f, i) {
+      if (!baseName) return f.name;
+      var ext = (/\.[A-Za-z0-9]{1,5}$/.exec(f.name) || [''])[0];
+      return baseName + (files.length > 1 ? ' (' + (i + 1) + ')' : '') + ext;
+    };
+    return folderId(docFolderRole(link)).then(function (fid) {
+      return files.reduce(function (p, f, i) {
+        return p.then(function () {
+          if (st) st.textContent = 'מעלה ' + (done + 1) + ' מתוך ' + files.length + ': ' + f.name;
+          return shrinkImage(f).then(function (ff2) { return uploadToDrive(ff2, fid, nameFor(ff2, i)); }).then(function (res) {
+            done++;
+            rows.push([uid(), res.id, res.name, type, link, desc || '', nowIso(), res.webViewLink || '', res.mimeType || '', String(res.size || '')]);
+          });
+        });
+      }, Promise.resolve());
+    }).then(function () { return rows.length ? appendRows('Documents', rows) : null; }).then(loadDocs).then(function () { return done; },
+      function (e) {
+        var saved = rows.length ? appendRows('Documents', rows).then(loadDocs) : Promise.resolve();
+        return saved.then(function () { e.uploaded = rows.length; throw e; });
+      });
+  }
+  // אחרי שמירת דרישה/תשלום/הוצאה: העלאת הקבצים שנבחרו בחלון
+  function attachAfterSave(link, type) {
+    if (!docUpload || !docUpload.files.length) return Promise.resolve(0);
+    setSync('busy', 'מעלה מסמכים…');
+    var nm = $('doc-name') ? $('doc-name').value.trim() : '';
+    return uploadFiles(docUpload.files.slice(), link, type, '', $('doc-status'), nm).then(function (n) { setSync('', 'נשמר'); return n; }, function (e) {
+      setSync('err', 'העלאה נכשלה');
+      toast('הרשומה נשמרה, אבל העלאת המסמכים נכשלה: ' + (e.message || '') + '. אפשר לצרף שוב דרך סמל האטב.', 'err');
+      if (e instanceof AuthError) showReconnect();
+      return 0;
+    });
+  }
+  function attachSection(media) {
+    return '<details class="attach-box"' + (docUpload && docUpload.files.length || media ? ' open' : '') + '><summary>' + icon('clip', 16) + (media ? ' תמונות, וידאו ומסמכים' : ' צירוף מסמכים (אופציונלי)') + '</summary>' +
+      '<div class="pick-row"><label class="btn btn-secondary btn-sm file-btn">בחירת קבצים<input type="file" id="doc-files" multiple accept="image/*,' + (media ? 'video/*,' : '') + 'application/pdf,.doc,.docx,.xls,.xlsx"></label>' +
+      '<label class="btn btn-secondary btn-sm file-btn">צילום<input type="file" id="doc-camera" accept="image/*" capture="environment"></label>' +
+      (media ? '<label class="btn btn-secondary btn-sm file-btn">וידאו<input type="file" id="doc-video" accept="video/*" capture="environment"></label>' : '') + '</div>' +
+      '<ul class="file-list" id="doc-picked"></ul>' +
+      '<div class="field"><label for="doc-name">שם למסמכים (אופציונלי)</label><input id="doc-name" placeholder="ברירת מחדל: שם הקובץ"></div>' +
+      '<div class="upload-status small" id="doc-status"></div></details>';
+  }
+  function bindPickers() {
+    ['doc-files', 'doc-camera', 'doc-video'].forEach(function (id) {
+      var el = $(id); if (!el) return;
+      el.addEventListener('change', function (e) {
         Array.prototype.forEach.call(e.target.files, function (f) { docUpload.files.push(f); });
         e.target.value = '';
         renderPicked();
       });
     });
-  }
-  function fmtSize(n) { n = C.num(n); return n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
-  function renderPicked() {
-    var ul = $('doc-picked'); if (!ul) return;
-    ul.innerHTML = docUpload.files.length ? docUpload.files.map(function (f, i) {
-      return '<li><span>' + esc(f.name) + ' <span class="muted small">' + fmtSize(f.size) + '</span></span><button type="button" class="icon-btn danger" data-action="doc-unpick" data-i="' + i + '" aria-label="הסר">' + icon('trash', 16) + '</button></li>';
-    }).join('') : '<li class="muted small">לא נבחרו קבצים.</li>';
+    if ($('doc-picked')) renderPicked();
   }
   function saveDocs(btn) {
     if (!docUpload.files.length) { showErrors('m-err', ['יש לבחור לפחות קובץ אחד']); return; }
-    var d = form.data, link = d.link, role = docFolderRole(link), st = $('doc-status');
+    var d = form.data, link = d.link, st = $('doc-status');
     btn.disabled = true; setSync('busy', 'מעלה…');
-    var files = docUpload.files.slice(), done = 0, rows = [];
-    folderId(role).then(function (fid) {
-      return files.reduce(function (p, f) {
-        return p.then(function () {
-          if (st) st.textContent = 'מעלה ' + (done + 1) + ' מתוך ' + files.length + ': ' + f.name;
-          return shrinkImage(f).then(function (ff2) { return uploadToDrive(ff2, fid); }).then(function (res) {
-            done++;
-            rows.push([uid(), res.id, res.name, d.type, link, d.desc || '', nowIso(), res.webViewLink || '', res.mimeType || '', String(res.size || '')]);
-          });
-        });
-      }, Promise.resolve());
-    }).then(function () { return appendRows('Documents', rows); }).then(loadDocs).then(function () {
+    var files = docUpload.files.slice(), done = 0;
+    uploadFiles(files, link, d.type, d.desc, st, String(d.name || '').trim()).then(function (n) { done = n; }).then(function () {
       setSync('', 'נשמר'); toast(done === 1 ? 'המסמך הועלה' : done + ' מסמכים הועלו', 'ok');
       logActivity('upload', 'Documents', done + ' files'); closeModal(); rerender();
     }).catch(function (e) {
       setSync('err', 'העלאה נכשלה');
-      if (rows.length) appendRows('Documents', rows).then(loadDocs).then(rerender);
       if (st) st.textContent = '';
-      showErrors('m-err', [(e && e.message) || 'העלאה נכשלה', rows.length ? rows.length + ' קבצים הועלו לפני השגיאה.' : '']);
+      showErrors('m-err', [(e && e.message) || 'העלאה נכשלה', e && e.uploaded ? e.uploaded + ' קבצים הועלו לפני השגיאה.' : '']);
       if (e instanceof AuthError) handleError(e);
     }).then(function () { btn.disabled = false; });
   }
@@ -1565,7 +1624,7 @@
       .catch(function (e) { if (e instanceof AuthError) throw e; /* הקובץ אולי כבר נמחק ב-Drive */ })
       .then(function () { return deleteRow('Documents', d._row); }).then(loadDocs), 'המסמך נמחק').then(rerender).catch(handleError);
   }
-  function docIcon(d) { return /^image\//.test(d.mimeType || '') ? 'image' : 'docs'; }
+  function docIcon(d) { return /^image\//.test(d.mimeType || '') ? 'image' : (/^video\//.test(d.mimeType || '') ? 'video' : 'docs'); }
   function docItems(list, showLink) {
     if (!list.length) return '<li class="muted small">אין מסמכים.</li>';
     return list.slice().sort(function (a, b) { return a.uploadedAt < b.uploadedAt ? 1 : -1; }).map(function (d) {
@@ -1589,8 +1648,223 @@
       '<a href="' + esc(state.rootLink) + '" target="_blank" rel="noopener">לתיקייה ב-Drive</a></div>' +
       '<button type="button" class="btn btn-primary" data-action="attach" data-link="">העלאת מסמך</button></div>' +
       '<div class="fields"><div class="field"><label for="df-type">סוג</label><select id="df-type" data-df="type">' + opt([['', 'הכול']].concat(DOC_TYPES), docFilter.type) + '</select></div>' +
-      '<div class="field"><label for="df-scope">תחום</label><select id="df-scope" data-df="scope">' + opt([['', 'הכול'], ['contractor', 'קבלן'], ['expenses', 'הוצאות נוספות'], ['general', 'כללי']], docFilter.scope) + '</select></div></div></section>' +
+      '<div class="field"><label for="df-scope">תחום</label><select id="df-scope" data-df="scope">' + opt([['', 'הכול'], ['contractor', 'קבלן'], ['expenses', 'הוצאות נוספות'], ['journal', 'יומן תיעוד'], ['general', 'כללי']], docFilter.scope) + '</select></div></div></section>' +
       '<section class="card"><ul class="items">' + docItems(list, true) + '</ul></section>';
+  }
+
+  // ---------- יומן תיעוד ----------
+  var JOURNAL_AREAS = ['ביקור באתר', 'שלד', 'חשמל', 'אינסטלציה', 'ריצוף', 'מטבח', 'אמבטיה', 'חלונות ואלומיניום', 'פיתוח חוץ', 'פגישה', 'אחר'];
+  function loadJournal() { return readRows('Journal').then(function (r) { state.journal = r.filter(function (x) { return x.id; }); return state.journal; }); }
+  function jrById(id) { return state.journal.filter(function (j) { return j.id === id; })[0]; }
+  function jrLinkOptions() {
+    var o = [['', 'ללא שיוך'], ['contractor', 'קבלן — כללי']];
+    ledger().forEach(function (r, i) { o.push(['stage:' + r.stageId, 'קבלן — אבן דרך ' + (i + 1) + ': ' + r.name]); });
+    state.categories.forEach(function (c) { o.push(['cat:' + c.id, 'הוצאות — ' + c.name]); });
+    return o;
+  }
+  function areaList(extra) {
+    var set = {};
+    JOURNAL_AREAS.concat(extra || []).forEach(function (a) { if (a) set[a] = 1; });
+    return Object.keys(set);
+  }
+  var jrFilter = { area: '', link: '' };
+  function journalView() {
+    var list = state.journal.filter(function (j) {
+      if (jrFilter.area && j.area !== jrFilter.area) return false;
+      if (jrFilter.link === 'contractor' && !/^(contractor|stage:)/.test(j.links || '')) return false;
+      if (jrFilter.link === 'expenses' && !/^cat:/.test(j.links || '')) return false;
+      return true;
+    }).sort(function (a, b) { return (a.date + a.updatedAt) < (b.date + b.updatedAt) ? 1 : -1; });
+    var areas = areaList(state.journal.map(function (j) { return j.area; }));
+    var lastMonth = '';
+    var items = list.map(function (j) {
+      var mk = String(j.date).slice(0, 7), head = '';
+      if (mk !== lastMonth) { lastMonth = mk; var ym = C.ymKey(mk); head = ym ? '<li class="tl-month">' + C.monthName(ym.y, ym.m) + '</li>' : ''; }
+      var docs = docsFor('jr:' + j.id);
+      return head + '<li class="tl-item"><div class="tl-date num">' + C.fmtDate(j.date).slice(0, 5) + '</div><div class="tl-body card">' +
+        '<div class="row between"><b>' + esc(j.title) + '</b><span class="tools">' + clipBtn('jr:' + j.id) +
+        '<button type="button" class="icon-btn" data-action="edit-jr" data-id="' + esc(j.id) + '" aria-label="עריכה">' + icon('edit', 18) + '</button>' +
+        '<button type="button" class="icon-btn danger" data-action="del-jr" data-id="' + esc(j.id) + '" aria-label="מחיקה">' + icon('trash', 18) + '</button></span></div>' +
+        '<div class="badges">' + (j.area ? '<span class="badge info">' + esc(j.area) + '</span>' : '') + (j.links ? '<span class="badge muted-b">' + esc(linkLabel(j.links)) + '</span>' : '') + '</div>' +
+        (j.notes ? '<p class="jr-notes">' + esc(j.notes) + '</p>' : '') +
+        (docs.length ? '<ul class="chips">' + docs.map(function (d) {
+          var href = d.webViewLink || ('https://drive.google.com/file/d/' + encodeURIComponent(d.driveFileId) + '/view');
+          return '<li><a href="' + esc(href) + '" target="_blank" rel="noopener">' + icon(/^video\//.test(d.mimeType) ? 'video' : docIcon(d), 16) + '<span>' + esc(d.name) + '</span></a></li>';
+        }).join('') + '</ul>' : '') + '</div></li>';
+    }).join('');
+    var opt = function (arr, v) { return arr.map(function (o) { return '<option value="' + esc(o[0]) + '"' + (v === o[0] ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join(''); };
+    return '<section class="card"><div class="row between"><div class="muted small">' + state.journal.length + ' רשומות</div>' +
+      '<button type="button" class="btn btn-primary" data-action="new-jr">רשומה חדשה</button></div>' +
+      '<div class="fields"><div class="field"><label for="jf-area">תחום</label><select id="jf-area" data-jf="area">' + opt([['', 'הכול']].concat(areas.map(function (a) { return [a, a]; })), jrFilter.area) + '</select></div>' +
+      '<div class="field"><label for="jf-link">שיוך</label><select id="jf-link" data-jf="link">' + opt([['', 'הכול'], ['contractor', 'קבלן'], ['expenses', 'הוצאות נוספות']], jrFilter.link) + '</select></div></div></section>' +
+      (items ? '<ul class="timeline">' + items + '</ul>' : '<section class="card"><div class="empty">' + icon('camera', 28) + '<b>היומן ריק</b><span>תעדו ביקורים באתר, התקדמות, בעיות והחלטות — עם תמונות וסרטונים.</span></div></section>');
+  }
+  function openJournal(id) {
+    docUpload = { files: [] };
+    var j = id ? jrById(id) : null;
+    form = { kind: 'jr', data: j ? clone(j) : { date: todayIso(), title: '', area: '', links: '', notes: '' } };
+    openModal(j ? 'עריכת רשומה' : 'רשומה חדשה ביומן', '<div class="fields">' +
+      ff('date', 'תאריך', { type: 'date', required: true }) +
+      ff('title', 'נושא', { required: true, placeholder: 'לדוגמה: ביקור באתר — יציקת תקרה' }) +
+      ff('area', 'תחום', { list: 'jr-areas', placeholder: 'בחר או הקלד' }) +
+      ff('links', 'שיוך', { type: 'select', options: jrLinkOptions() }) +
+      '<div class="field wide"><label for="m-notes">הערות</label><textarea id="m-notes" data-mf="notes" rows="4">' + esc(form.data.notes) + '</textarea></div>' +
+      '</div><datalist id="jr-areas">' + areaList(state.journal.map(function (x) { return x.area; })).map(function (a) { return '<option value="' + esc(a) + '">'; }).join('') + '</datalist>' +
+      attachSection(true) +
+      '<div class="error-box" id="m-err" hidden></div><div class="modal-actions"><button type="button" class="btn btn-ghost" data-action="modal-close">ביטול</button><button type="button" class="btn btn-primary" data-action="save-jr">שמירה</button></div>');
+  }
+  function saveJournal(btn) {
+    var d = form.data, errs = [];
+    if (!d.date) errs.push('יש להזין תאריך');
+    if (!String(d.title).trim()) errs.push('יש להזין נושא');
+    showErrors('m-err', errs); if (errs.length) return;
+    var obj = { id: d.id || uid(), date: d.date, title: String(d.title).trim(), description: '', area: String(d.area || '').trim(), links: d.links, notes: d.notes, updatedAt: nowIso(), _row: d._row };
+    btn.disabled = true;
+    withSync(upsertRow('Journal', obj).then(loadJournal), 'הרשומה נשמרה').then(function () {
+      logActivity(d.id ? 'update' : 'create', 'Journal', obj.title);
+      return attachAfterSave('jr:' + obj.id, 'photo').then(function () { closeModal(); rerender(); });
+    }).catch(handleError).then(function () { btn.disabled = false; });
+  }
+  function deleteJournal(id) {
+    var j = jrById(id); if (!j) return;
+    var docs = docsFor('jr:' + id);
+    if (!confirm('למחוק את הרשומה "' + j.title + '"?' + (docs.length ? '\n' + docs.length + ' הקבצים המצורפים יועברו לסל המחזור של Drive.' : ''))) return;
+    var p = docs.reduce(function (acc, d) {
+      return acc.then(function () { return api(DRIVE + '/files/' + encodeURIComponent(d.driveFileId) + '?fields=id', { method: 'PATCH', body: { trashed: true } }).catch(function (e) { if (e instanceof AuthError) throw e; }); });
+    }, Promise.resolve());
+    // מחיקת שורות מסמכים מהסוף להתחלה כדי שמספרי השורות לא יזוזו
+    withSync(p.then(function () {
+      return docs.map(function (d) { return d._row; }).sort(function (a, b) { return b - a; }).reduce(function (acc, r) { return acc.then(function () { return deleteRow('Documents', r); }); }, Promise.resolve());
+    }).then(function () { return deleteRow('Journal', j._row); }).then(function () { return Promise.all([loadJournal(), loadDocs()]); }), 'הרשומה נמחקה').then(rerender).catch(handleError);
+  }
+
+  // ---------- אנשי קשר ----------
+  var CONTACT_AREAS = ['קבלן', 'מפקח / מנהל פרויקט', 'אדריכל / מעצב', 'עורך דין', 'בנק / משכנתא', 'מטבח', 'נגרות', 'חשמל', 'אינסטלציה', 'מיזוג אוויר', 'אלומיניום', 'גינון', 'הובלות', 'אחר'];
+  function loadContacts() { return readRows('Contacts').then(function (r) { state.contacts = r.filter(function (x) { return x.id; }); return state.contacts; }); }
+  function ctById(id) { return state.contacts.filter(function (c) { return c.id === id; })[0]; }
+  function waNumber(p) {
+    var d = String(p || '').replace(/[^\d+]/g, '');
+    if (!d) return '';
+    if (d.indexOf('+') === 0) return d.slice(1);
+    if (d.indexOf('00') === 0) return d.slice(2);
+    if (d.indexOf('0') === 0) return '972' + d.slice(1);
+    return d;
+  }
+  var ctSearch = '';
+  function contactsView() {
+    var q = ctSearch.trim().toLowerCase();
+    var list = state.contacts.filter(function (c) {
+      return !q || [c.domain, c.company, c.role, c.name, c.phone, c.phone2, c.email, c.notes].join(' ').toLowerCase().indexOf(q) >= 0;
+    });
+    var groups = {};
+    list.forEach(function (c) { var k = c.domain || 'ללא תחום'; (groups[k] = groups[k] || []).push(c); });
+    var html = Object.keys(groups).sort().map(function (k) {
+      return '<section class="card"><h2>' + esc(k) + '</h2><ul class="items">' + groups[k].map(function (c) {
+        var phones = [c.phone, c.phone2].filter(Boolean);
+        return '<li class="item contact"><div><b>' + esc(c.name || c.company) + '</b>' +
+          '<div class="muted small">' + esc([c.company && c.name ? c.company : '', c.role].filter(Boolean).join(' · ')) + '</div>' +
+          (phones.length ? '<div class="small num">' + phones.map(esc).join(' · ') + '</div>' : '') +
+          (c.email ? '<div class="small">' + esc(c.email) + '</div>' : '') +
+          (c.notes ? '<div class="muted small">' + esc(c.notes) + '</div>' : '') + '</div>' +
+          '<div class="ct-actions">' +
+          (c.phone ? '<a class="icon-btn act" href="tel:' + esc(String(c.phone).replace(/[^\d+]/g, '')) + '" aria-label="חיוג ל' + esc(c.name) + '">' + icon('phone', 18) + '</a>' +
+            '<a class="icon-btn act wa" href="https://wa.me/' + esc(waNumber(c.phone)) + '" target="_blank" rel="noopener" aria-label="וואטסאפ ל' + esc(c.name) + '">' + icon('chat', 18) + '</a>' : '') +
+          (c.email ? '<a class="icon-btn act" href="mailto:' + esc(c.email) + '" aria-label="מייל ל' + esc(c.name) + '">' + icon('mail', 18) + '</a>' : '') +
+          '<button type="button" class="icon-btn" data-action="edit-ct" data-id="' + esc(c.id) + '" aria-label="עריכה">' + icon('edit', 18) + '</button>' +
+          '<button type="button" class="icon-btn danger" data-action="del-ct" data-id="' + esc(c.id) + '" aria-label="מחיקה">' + icon('trash', 18) + '</button></div></li>';
+      }).join('') + '</ul></section>';
+    }).join('');
+    return '<section class="card"><div class="row between"><div class="field" style="flex:1;min-width:200px"><label for="ct-search" class="sr-only">חיפוש</label><input id="ct-search" data-ct-search="1" type="search" placeholder="חיפוש לפי שם, חברה, תחום, טלפון…" value="' + esc(ctSearch) + '"></div>' +
+      '<button type="button" class="btn btn-primary" data-action="new-ct">איש קשר חדש</button></div></section>' +
+      '<div id="ct-results">' + (html || '<section class="card"><div class="empty">' + icon('contacts', 28) + '<b>' + (q ? 'לא נמצאו תוצאות' : 'אין עדיין אנשי קשר') + '</b></div></section>') + '</div>';
+  }
+  function openContact(id) {
+    var c = id ? ctById(id) : null;
+    form = { kind: 'ct', data: c ? clone(c) : { domain: '', company: '', role: '', name: '', phone: '', phone2: '', email: '', notes: '' } };
+    openModal(c ? 'עריכת איש קשר' : 'איש קשר חדש', '<div class="fields">' +
+      ff('domain', 'תחום', { list: 'ct-areas', placeholder: 'בחר או הקלד' }) + ff('company', 'חברה') + ff('role', 'תפקיד') + ff('name', 'שם') +
+      ff('phone', 'טלפון', { type: 'tel', inputmode: 'tel' }) + ff('phone2', 'טלפון נוסף', { type: 'tel', inputmode: 'tel' }) + ff('email', 'מייל', { type: 'email' }) +
+      ff('notes', 'הערות', { wide: true }) + '</div>' +
+      '<datalist id="ct-areas">' + areaListFrom(CONTACT_AREAS, state.contacts.map(function (x) { return x.domain; })).map(function (a) { return '<option value="' + esc(a) + '">'; }).join('') + '</datalist>' +
+      '<div class="error-box" id="m-err" hidden></div><div class="modal-actions"><button type="button" class="btn btn-ghost" data-action="modal-close">ביטול</button><button type="button" class="btn btn-primary" data-action="save-ct">שמירה</button></div>');
+  }
+  function areaListFrom(base, extra) { var set = {}; base.concat(extra || []).forEach(function (a) { if (a) set[a] = 1; }); return Object.keys(set); }
+  function saveContact(btn) {
+    var d = form.data, errs = [];
+    if (!String(d.name).trim() && !String(d.company).trim()) errs.push('יש להזין שם או חברה');
+    if (d.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(d.email)) errs.push('כתובת המייל לא תקינה');
+    showErrors('m-err', errs); if (errs.length) return;
+    var obj = { id: d.id || uid(), domain: String(d.domain || '').trim(), company: String(d.company || '').trim(), role: d.role, name: String(d.name || '').trim(), phone: d.phone, phone2: d.phone2, email: d.email, notes: d.notes, updatedAt: nowIso(), _row: d._row };
+    btn.disabled = true;
+    withSync(upsertRow('Contacts', obj).then(loadContacts), 'איש הקשר נשמר').then(function () { closeModal(); rerender(); }).catch(handleError).then(function () { btn.disabled = false; });
+  }
+  function deleteContact(id) {
+    var c = ctById(id); if (!c) return;
+    if (!confirm('למחוק את ' + (c.name || c.company) + '?')) return;
+    withSync(deleteRow('Contacts', c._row).then(loadContacts), 'נמחק').then(rerender).catch(handleError);
+  }
+  function contactDatalist() {
+    return '<datalist id="ct-names">' + state.contacts.map(function (c) { return '<option value="' + esc(c.company || c.name) + '">'; }).join('') + '</datalist>';
+  }
+
+  // ---------- משימות ----------
+  var TASK_STATUS = [['todo', 'לביצוע'], ['doing', 'בטיפול'], ['waiting', 'ממתין לגורם חיצוני'], ['done', 'הושלם']];
+  var TASK_PRIO = [['low', 'נמוכה'], ['normal', 'רגילה'], ['high', 'גבוהה']];
+  function loadTasks() { return readRows('Tasks').then(function (r) { state.tasks = r.filter(function (x) { return x.id; }); return state.tasks; }); }
+  function tkById(id) { return state.tasks.filter(function (t) { return t.id === id; })[0]; }
+  function taskOverdue(t) { return t.status !== 'done' && t.dueDate && t.dueDate < todayIso(); }
+  var tkShowDone = false;
+  function tasksView() {
+    var open = state.tasks.filter(function (t) { return t.status !== 'done'; });
+    var done = state.tasks.filter(function (t) { return t.status === 'done'; });
+    var sortFn = function (a, b) {
+      var pa = { high: 0, normal: 1, low: 2 }[a.priority] || 1, pb = { high: 0, normal: 1, low: 2 }[b.priority] || 1;
+      return (a.dueDate || '9999') < (b.dueDate || '9999') ? -1 : ((a.dueDate || '9999') > (b.dueDate || '9999') ? 1 : pa - pb);
+    };
+    var row = function (t) {
+      var st = TASK_STATUS.filter(function (x) { return x[0] === t.status; })[0] || TASK_STATUS[0];
+      var isDone = t.status === 'done';
+      return '<li class="item task' + (isDone ? ' done' : '') + '"><button type="button" class="check" role="checkbox" aria-checked="' + isDone + '" data-action="toggle-tk" data-id="' + esc(t.id) + '" aria-label="סימון הושלם: ' + esc(t.title) + '">' + (isDone ? icon('check', 16) : '') + '</button>' +
+        '<div style="flex:1;min-width:0"><b>' + esc(t.title) + '</b>' +
+        '<div class="badges">' + (taskOverdue(t) ? '<span class="badge warn">באיחור</span>' : '') + (t.priority === 'high' && !isDone ? '<span class="badge warn">עדיפות גבוהה</span>' : '') +
+        (!isDone && t.status !== 'todo' ? '<span class="badge info">' + esc(st[1]) + '</span>' : '') + '</div>' +
+        '<div class="muted small">' + [t.dueDate ? 'יעד ' + C.fmtDate(t.dueDate) : '', t.owner ? 'אחראי: ' + esc(t.owner) : '', t.area ? esc(t.area) : ''].filter(Boolean).join(' · ') + '</div>' +
+        (t.description ? '<div class="muted small">' + esc(t.description) + '</div>' : '') + '</div>' +
+        '<span class="tools"><button type="button" class="icon-btn" data-action="edit-tk" data-id="' + esc(t.id) + '" aria-label="עריכה">' + icon('edit', 18) + '</button>' +
+        '<button type="button" class="icon-btn danger" data-action="del-tk" data-id="' + esc(t.id) + '" aria-label="מחיקה">' + icon('trash', 18) + '</button></span></li>';
+    };
+    return '<section class="card"><div class="row between"><div class="muted small">' + open.length + ' פתוחות' + (open.filter(taskOverdue).length ? ' · <span class="warn-text">' + open.filter(taskOverdue).length + ' באיחור</span>' : '') + '</div>' +
+      '<button type="button" class="btn btn-primary" data-action="new-tk">משימה חדשה</button></div></section>' +
+      '<section class="card"><h2>פתוחות</h2><ul class="items">' + (open.sort(sortFn).map(row).join('') || '<li class="muted small">אין משימות פתוחות.</li>') + '</ul></section>' +
+      (done.length ? '<section class="card"><button type="button" class="btn btn-ghost btn-sm" data-action="tk-show-done">' + (tkShowDone ? 'הסתר' : 'הצג') + ' משימות שהושלמו (' + done.length + ')</button>' +
+        (tkShowDone ? '<ul class="items">' + done.map(row).join('') + '</ul>' : '') + '</section>' : '');
+  }
+  function openTask(id) {
+    var t = id ? tkById(id) : null;
+    form = { kind: 'tk', data: t ? clone(t) : { title: '', description: '', area: '', dueDate: '', owner: '', priority: 'normal', status: 'todo', notes: '' } };
+    openModal(t ? 'עריכת משימה' : 'משימה חדשה', '<div class="fields">' +
+      ff('title', 'משימה', { required: true, wide: true }) +
+      ff('dueDate', 'תאריך יעד', { type: 'date' }) + ff('owner', 'אחראי', { list: 'ct-names' }) +
+      ff('priority', 'עדיפות', { type: 'select', options: TASK_PRIO }) + ff('status', 'סטטוס', { type: 'select', options: TASK_STATUS }) +
+      ff('area', 'תחום') + ff('description', 'פירוט', { wide: true }) + '</div>' + contactDatalist() +
+      '<div class="error-box" id="m-err" hidden></div><div class="modal-actions"><button type="button" class="btn btn-ghost" data-action="modal-close">ביטול</button><button type="button" class="btn btn-primary" data-action="save-tk">שמירה</button></div>');
+  }
+  function saveTask(btn) {
+    var d = form.data;
+    if (!String(d.title).trim()) { showErrors('m-err', ['יש להזין משימה']); return; }
+    var obj = { id: d.id || uid(), title: String(d.title).trim(), description: d.description, area: d.area, dueDate: d.dueDate, owner: d.owner, priority: d.priority, status: d.status, notes: d.notes || '', updatedAt: nowIso(), _row: d._row };
+    btn.disabled = true;
+    withSync(upsertRow('Tasks', obj).then(loadTasks), 'המשימה נשמרה').then(function () { closeModal(); rerender(); }).catch(handleError).then(function () { btn.disabled = false; });
+  }
+  function toggleTask(id) {
+    var t = tkById(id); if (!t) return;
+    var n = clone(t); n._row = t._row; n.status = t.status === 'done' ? 'todo' : 'done'; n.updatedAt = nowIso();
+    withSync(upsertRow('Tasks', n).then(loadTasks)).then(softRerender).catch(handleError);
+  }
+  function deleteTask(id) {
+    var t = tkById(id); if (!t) return;
+    if (!confirm('למחוק את המשימה "' + t.title + '"?')) return;
+    withSync(deleteRow('Tasks', t._row).then(loadTasks), 'המשימה נמחקה').then(rerender).catch(handleError);
   }
 
   // ---------- טפסי דרישה ותשלום (חלון) ----------
@@ -1599,6 +1873,7 @@
     var d = $('modal');
     $('modal-title').textContent = title;
     $('modal-body').innerHTML = html;
+    bindPickers();
     if (typeof d.showModal === 'function') { if (!d.open) d.showModal(); } else d.setAttribute('open', '');
     var first = d.querySelector('input,select'); if (first) first.focus();
   }
@@ -1625,6 +1900,7 @@
   function stageOptions() { return ledger().map(function (r, i) { return [r.stageId, (i + 1) + '. ' + r.name]; }); }
 
   function openRequest(stageId, reqId) {
+    docUpload = { files: [] };
     var rows = ledger();
     var existing = reqId ? state.requests.filter(function (q) { return q.id === reqId; })[0] : null;
     var sid = existing ? existing.stageId : (stageId || ((rows.filter(function (r) { return r.st.status !== 'paid'; })[0] || rows[0]) || {}).stageId);
@@ -1679,7 +1955,7 @@
         ff('indexMonth', 'חודש המדד', { type: 'month' }) : '') +
       ff('contractorAmount', 'הסכום בדרישת הקבלן (לבדיקה)', { type: 'number', step: 'any', inputmode: 'decimal', hint: 'אופציונלי. אם יש הפרש מהחישוב — תוצג התראה.' }) +
       ff('notes', 'הערות', { wide: true }) +
-      '</div><div class="calc-box" id="req-calc"></div><div class="error-box" id="m-err" hidden></div>' +
+      '</div><div class="calc-box" id="req-calc"></div>' + attachSection() + '<div class="error-box" id="m-err" hidden></div>' +
       '<div class="modal-actions"><button type="button" class="btn btn-ghost" data-action="modal-close">ביטול</button><button type="button" class="btn btn-primary" data-action="save-req">שמירה</button></div>';
     openModal(title, html);
     refreshIndexHint();
@@ -1717,11 +1993,12 @@
     btn.disabled = true;
     withSync(upsertRow('PaymentRequests', obj).then(loadRequests), 'הדרישה נשמרה').then(function () {
       logActivity(d.id ? 'update' : 'create', 'PaymentRequests', stageName(obj.stageId) + ' ' + obj.finalAmount);
-      closeModal(); rerender();
+      return attachAfterSave('req:' + obj.id, 'request').then(function () { closeModal(); rerender(); });
     }).catch(handleError).then(function () { btn.disabled = false; });
   }
 
   function openPayment(stageId, payId, type, expId) {
+    if (!form || form.kind !== 'pay') docUpload = { files: [] };
     var rows = ledger();
     var existing = payId ? state.payments.filter(function (p) { return p.id === payId; })[0] : null;
     if ((existing && existing.type === 'expense') || (!existing && type === 'expense')) {
@@ -1758,7 +2035,7 @@
         ff('method', 'אמצעי תשלום', { type: 'select', options: METHODS }) +
         ff('fundingSource', 'מקור מימון', { list: 'funding-list', placeholder: 'הון עצמי / משכנתא…' }) +
         ff('reference', 'אסמכתא') + ff('notes', 'הערות', { wide: true }) +
-        '</div><datalist id="funding-list"><option value="הון עצמי"><option value="משכנתא"><option value="הלוואה"></datalist>' +
+        '</div><datalist id="funding-list"><option value="הון עצמי"><option value="משכנתא"><option value="הלוואה"></datalist>' + attachSection() +
         '<div class="error-box" id="m-err" hidden></div>' +
         '<div class="modal-actions"><button type="button" class="btn btn-ghost" data-action="modal-close">ביטול</button><button type="button" class="btn btn-primary" data-action="save-pay">שמירה</button></div>'
         : '<p class="muted">עדיין אין הוצאות. קודם צריך להוסיף הוצאה, ואז לרשום לה תשלום.</p><div class="modal-actions"><button type="button" class="btn btn-primary" data-action="new-exp">הוצאה חדשה</button></div>'));
@@ -1777,7 +2054,7 @@
       ff('fundingSource', 'מקור מימון', { list: 'funding-list', placeholder: 'הון עצמי / משכנתא…' }) +
       ff('reference', 'אסמכתא') +
       ff('notes', 'הערות', { wide: true }) +
-      '</div><datalist id="funding-list"><option value="הון עצמי"><option value="משכנתא"><option value="הלוואה"></datalist>' +
+      '</div><datalist id="funding-list"><option value="הון עצמי"><option value="משכנתא"><option value="הלוואה"></datalist>' + attachSection() +
       '<div class="error-box" id="m-err" hidden></div>' +
       '<div class="modal-actions"><button type="button" class="btn btn-ghost" data-action="modal-close">ביטול</button><button type="button" class="btn btn-primary" data-action="save-pay">שמירה</button></div>';
     openModal(title, html);
@@ -1793,7 +2070,8 @@
         method: d.method, fundingSource: d.fundingSource, reference: d.reference, notes: d.notes, updatedAt: nowIso(), _row: d._row };
       btn.disabled = true;
       withSync(upsertRow('Payments', eo).then(loadPayments), 'התשלום נשמר').then(function () {
-        logActivity(d.id ? 'update' : 'create', 'Payments', 'expense ' + eo.amount); closeModal(); rerender();
+        logActivity(d.id ? 'update' : 'create', 'Payments', 'expense ' + eo.amount);
+        return attachAfterSave('pay:' + eo.id, 'receipt').then(function () { closeModal(); rerender(); });
       }).catch(handleError).then(function () { btn.disabled = false; });
       return;
     }
@@ -1810,7 +2088,7 @@
     btn.disabled = true;
     withSync(upsertRow('Payments', obj).then(loadPayments), 'התשלום נשמר').then(function () {
       logActivity(d.id ? 'update' : 'create', 'Payments', stageName(obj.stageId) + ' ' + obj.amount);
-      closeModal(); rerender();
+      return attachAfterSave('pay:' + obj.id, 'receipt').then(function () { closeModal(); rerender(); });
     }).catch(handleError).then(function () { btn.disabled = false; });
   }
   function deleteRequest(id) {
@@ -1862,6 +2140,13 @@
       }
       if (ck === 'targetIdx') calcForm.manual = true;
       updateCalcOut(); return;
+    }
+    if (t.hasAttribute('data-jf')) { jrFilter[t.getAttribute('data-jf')] = t.value; softRerender(); return; }
+    if (t.hasAttribute('data-ct-search')) {
+      ctSearch = t.value;
+      var tmp = document.createElement('div'); tmp.innerHTML = contactsView();
+      var res = $('ct-results'), nr = tmp.querySelector('#ct-results'); if (res && nr) res.innerHTML = nr.innerHTML;
+      return;
     }
     if (t.hasAttribute('data-df')) { docFilter[t.getAttribute('data-df')] = t.value; softRerender(); return; }
     if (t.hasAttribute('data-sc')) { scDraft[+t.getAttribute('data-i')][t.getAttribute('data-sc')] = t.getAttribute('data-sc') === 'name' ? t.value : t.value; return; }
@@ -1959,6 +2244,20 @@
       case 'save-doc': saveDocs(btn); return;
       case 'doc-unpick': docUpload.files.splice(+btn.getAttribute('data-i'), 1); renderPicked(); return;
       case 'del-doc': deleteDoc(btn.getAttribute('data-id')); return;
+      case 'new-jr': openJournal(); return;
+      case 'edit-jr': openJournal(btn.getAttribute('data-id')); return;
+      case 'save-jr': saveJournal(btn); return;
+      case 'del-jr': deleteJournal(btn.getAttribute('data-id')); return;
+      case 'new-ct': openContact(); return;
+      case 'edit-ct': openContact(btn.getAttribute('data-id')); return;
+      case 'save-ct': saveContact(btn); return;
+      case 'del-ct': deleteContact(btn.getAttribute('data-id')); return;
+      case 'new-tk': openTask(); return;
+      case 'edit-tk': openTask(btn.getAttribute('data-id')); return;
+      case 'save-tk': saveTask(btn); return;
+      case 'del-tk': deleteTask(btn.getAttribute('data-id')); return;
+      case 'toggle-tk': toggleTask(btn.getAttribute('data-id')); return;
+      case 'tk-show-done': tkShowDone = !tkShowDone; softRerender(); return;
       case 'pick-sc':
         withSync(saveSettings({ scenarioId: btn.getAttribute('data-id') }), 'התרחיש נבחר').then(softRerender).catch(handleError); return;
       case 'sc-add': scDraft.push({ id: uid(), name: 'תרחיש חדש', y1: 3, y2: 3, y3: 3 }); scEditOpen = true; softRerender(); return;

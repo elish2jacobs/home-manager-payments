@@ -277,3 +277,33 @@ a.cat:hover{background:var(--bg)}
 .doc-main:hover b{text-decoration:underline}
 .icon-btn.clip{position:relative}
 .clip-n{position:absolute;top:2px;left:2px;background:var(--brand-2);color:#fff;font-size:10px;font-weight:700;border-radius:999px;min-width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;padding:0 3px}
+.attach-box{background:var(--bg);border-radius:12px;padding:8px 12px}
+.attach-box summary{cursor:pointer;color:var(--brand-2);font-weight:500;display:flex;align-items:center;gap:6px;min-height:36px}
+.attach-box[open]{display:flex;flex-direction:column;gap:8px}
+.attach-box .file-list li{background:#fff}
+
+/* ---------- שלב 8: יומן, אנשי קשר, משימות ---------- */
+textarea{font:inherit;color:var(--ink);background:#fff;border:1px solid #C7D0DC;border-radius:10px;padding:10px 12px;width:100%;resize:vertical}
+textarea:focus{outline:3px solid #BBD4F2;border-color:var(--brand-2)}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.timeline{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.tl-month{font-weight:700;color:var(--muted);font-size:14px;padding:6px 4px 0}
+.tl-item{display:grid;grid-template-columns:52px minmax(0,1fr);gap:10px;align-items:start}
+.tl-date{font-size:13px;font-weight:700;color:var(--brand);background:var(--brand-soft);border-radius:10px;padding:8px 4px;text-align:center}
+.tl-body{padding:14px 16px;gap:8px}
+.tl-body .tools{display:flex;gap:2px}
+.jr-notes{margin:0;white-space:pre-line;font-size:14px}
+.chips{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
+.chips a{display:inline-flex;align-items:center;gap:6px;background:var(--bg);border-radius:999px;padding:6px 12px;font-size:13px;color:var(--ink);text-decoration:none;max-width:220px;min-height:36px}
+.chips a span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chips a svg{color:var(--brand-2);flex-shrink:0}
+.chips a:hover{background:var(--brand-soft)}
+.ct-actions{display:flex;gap:2px;flex-wrap:wrap;justify-content:flex-end}
+.icon-btn.act{color:var(--brand-2);background:var(--brand-soft);text-decoration:none}
+.icon-btn.act.wa{color:#1E7A44;background:var(--ok-soft)}
+.item.contact{align-items:flex-start}
+.item.task{align-items:flex-start;gap:12px}
+.item.task .tools{display:flex;gap:2px}
+.check{width:28px;height:28px;flex-shrink:0;border-radius:8px;border:2px solid #B9C7D8;background:#fff;color:#fff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0;margin-top:2px}
+.check[aria-checked="true"]{background:var(--ok);border-color:var(--ok)}
+.item.task.done b{text-decoration:line-through;color:var(--muted)}
